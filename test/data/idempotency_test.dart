@@ -88,6 +88,8 @@ void main() {
     final entry = positiveDraft(day: day, slot: 'main');
     expect(entry.idempotencyKey, '2025-06-01|strength_training|main');
 
+    // 先落库才能读回来——上一版这里漏了 commit，读的是空表。
+    await capture.commit(entry);
     final stored = await capture.forDay(day);
     expect(stored.single.idempotencyKey, entry.idempotencyKey);
   });
