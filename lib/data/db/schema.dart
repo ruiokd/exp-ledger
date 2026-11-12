@@ -1,0 +1,457 @@
+/// 数据库结构：全部 DDL 的唯一来源。
+///
+/// 铁律：任何地方不要在别处再写一遍表名或建表语句。
+/// 迁移、测试、导出、诊断都从这里取。
+///
+/// 表分三类：
+///   1. 业务表（14 张，见 STATE.md 清单）
+///   2. 结算产物表（day_settlement：一天的结算结果，级联重算的中间层）
+///   3. 内部表（daily_log_history / dirty_day：修订链与脏日队列）
+library;
+
+/// 表名常量。字符串拼错在运行时才炸，所以统一走这里。
+class Tables {
+  const Tables._();
+
+  // ---- 业务表 ----
+  static const String userProfile = 'user_profile';
+  static const String calibrationRecord = 'calibration_record';
+  static const String captureSession = 'capture_session';
+  static const String dailyLog = 'daily_log';
+  static const String valenceEvent = 'valence_event';
+  static const String negativeEvent = 'negative_event';
+  static const String energyLedger = 'energy_ledger';
+  static const String loadIndex = 'load_index';
+  static const String abilitySnapshot = 'ability_snapshot';
+  static const String forecastPoint = 'forecast_point';
+  static const String memoryItem = 'memory_item';
+  static const String confirmationTask = 'confirmation_task';
+  static const String badge = 'badge';
+  static const String configOverride = 'config_override';
+
+  /// 应用设置（提醒开关/时间等）。和第 4 步的表不同：
+  /// 这里存的是**用户偏好**，不参与结算，也不进导出以外的算法路径。
+  static const String appSetting = 'app_setting';
+
+  // ---- 结算产物 ----
+  static const String daySettlement = 'day_settlement';
+
+  // ---- 内部表 ----
+  static const String dailyLogHistory = 'daily_log_history';
+  static const String dirtyDay = 'dirty_day';
+
+  /// 需要被「清空全部数据」遍历的表（顺序无关，因为无外键约束）。
+  static const List<String> all = <String>[
+    userProfile,
+    calibrationRecord,
+    captureSession,
+    dailyLog,
+    dailyLogHistory,
+    valenceEvent,
+    negativeEvent,
+    energyLedger,
+    loadIndex,
+    daySettlement,
+    abilitySnapshot,
+    forecastPoint,
+    memoryItem,
+    confirmationTask,
+    badge,
+    configOverride,
+    appSetting,
+    dirtyDay,
+  ];
+}
+
+/// 索引名常量。测试会按名字断言它们存在。
+class Indexes {
+  const Indexes._();
+
+  static const String dailyLogIdempotency = 'ux_daily_log_idem';
+  static const String dailyLogDay = 'ix_daily_log_day';
+  static const String dailyLogBehavior = 'ix_daily_log_behavior';
+  static const String historyKey = 'ix_history_key';
+
+  static const String valenceSlot = 'ux_valence_slot';
+  static const String valenceDay = 'ix_valence_day';
+
+  static const String negativePrimary = 'ux_negative_primary';
+  static const String negativeDay = 'ix_negative_day';
+
+  static const String forecastDay = 'ix_forecast_day';
+
+  static const String memoryDue = 'ix_memory_due';
+  static const String confirmationDue = 'ix_confirmation_due';
+  static const String calibrationTime = 'ix_calibration_time';
+  static const String sessionDay = 'ix_session_day';
+}
+
+/// `app_setting` 的建表语句。
+///
+/// 单独抽成常量，是因为它要在两个地方用到：全新建库（[kCreateStatements]）
+/// 和 v1 → v2 迁移。两处各抄一遍 SQL 迟早会漂移。
+const String kAppSettingTable = '''
+CREATE TABLE IF NOT EXISTS app_setting (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)
+''';
+
+/// 建表 + 建索引语句。逐条执行（sqflite 的 execute 不支持多语句）。
+const List<String> kCreateStatements = <String>[
+  // ---------------------------------------------------------------- 用户档案
+  '''
+  CREATE TABLE IF NOT EXISTS user_profile (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    height_cm REAL NOT NULL DEFAULT 172,
+    weight_kg REAL NOT NULL DEFAULT 70,
+    age INTEGER NOT NULL DEFAULT 28,
+    sex TEXT NOT NULL DEFAULT 'male',
+    resting_hr INTEGER NOT NULL DEFAULT 66,
+    body_fat REAL,
+    sleep_need_hours REAL NOT NULL DEFAULT 7.5,
+    sleep_line_hour INTEGER NOT NULL DEFAULT 0,
+    sleep_line_minute INTEGER NOT NULL DEFAULT 20,
+    vocabulary_estimate INTEGER NOT NULL DEFAULT 6000,
+    one_rm_squat REAL,
+    vo2max_estimate REAL,
+    profile_confidence TEXT NOT NULL DEFAULT 'selfReport',
+    sleep_confidence TEXT NOT NULL DEFAULT 'selfReport',
+    vo2_confidence TEXT NOT NULL DEFAULT 'selfReport',
+    vocab_confidence TEXT NOT NULL DEFAULT 'selfReport',
+    last_calibrated_at TEXT,
+    updated_at TEXT NOT NULL
+  )
+  ''',
+
+  // ---------------------------------------------------------------- 校准记录
+  '''
+  CREATE TABLE IF NOT EXISTS calibration_record (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    axis TEXT NOT NULL,
+    measured_value REAL NOT NULL,
+    unit TEXT NOT NULL,
+    source TEXT NOT NULL,
+    confidence_before TEXT NOT NULL,
+    confidence_after TEXT NOT NULL,
+    raw_json TEXT NOT NULL DEFAULT '{}',
+    performed_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )
+  ''',
+  '''
+  CREATE INDEX IF NOT EXISTS ix_calibration_time
+    ON calibration_record (performed_at DESC)
+  ''',
+
+  // ---------------------------------------------------------------- 采集会话
+  '''
+  CREATE TABLE IF NOT EXISTS capture_session (
+    id TEXT PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    day_key TEXT,
+    behavior_code TEXT,
+    raw_text TEXT,
+    stage TEXT NOT NULL DEFAULT 'intent',
+    answered_count INTEGER NOT NULL DEFAULT 0,
+    abandoned INTEGER NOT NULL DEFAULT 0,
+    used_same_as_last INTEGER NOT NULL DEFAULT 0,
+    used_voice INTEGER NOT NULL DEFAULT 0,
+    confidence_ceiling TEXT NOT NULL DEFAULT 'calibrated',
+    entry_source TEXT NOT NULL DEFAULT 'manual',
+    trace_json TEXT NOT NULL DEFAULT '[]'
+  )
+  ''',
+  '''
+  CREATE INDEX IF NOT EXISTS ix_session_day
+    ON capture_session (day_key, started_at DESC)
+  ''',
+
+  // ---------------------------------------------------------------- 原始记录
+  '''
+  CREATE TABLE IF NOT EXISTS daily_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    day_key TEXT NOT NULL,
+    behavior_code TEXT NOT NULL,
+    category TEXT NOT NULL,
+    valence TEXT NOT NULL,
+    axis TEXT NOT NULL,
+    plan_status TEXT NOT NULL,
+    confidence TEXT NOT NULL,
+    slot_key TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    answers_json TEXT NOT NULL DEFAULT '{}',
+    metrics_json TEXT NOT NULL DEFAULT '{}',
+    interpretation TEXT NOT NULL DEFAULT '',
+    dose_fraction REAL NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'manual',
+    created_at TEXT NOT NULL,
+    session_id TEXT,
+    notes_json TEXT NOT NULL DEFAULT '[]',
+    warnings_json TEXT NOT NULL DEFAULT '[]',
+    revision INTEGER NOT NULL DEFAULT 0,
+    is_interruption INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+  )
+  ''',
+  '''
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_daily_log_idem
+    ON daily_log (idempotency_key)
+  ''',
+  '''
+  CREATE INDEX IF NOT EXISTS ix_daily_log_day
+    ON daily_log (day_key, behavior_code)
+  ''',
+  '''
+  CREATE INDEX IF NOT EXISTS ix_daily_log_behavior
+    ON daily_log (behavior_code, day_key DESC)
+  ''',
+
+  // 修订链：被覆盖的旧版本留在这里，永远不删（除了「清空全部数据」）。
+  '''
+  CREATE TABLE IF NOT EXISTS daily_log_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    idempotency_key TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    day_key TEXT NOT NULL,
+    row_json TEXT NOT NULL,
+    superseded_at TEXT NOT NULL
+  )
+  ''',
+  '''
+  CREATE UNIQUE INDEX IF NOT EXISTS ix_history_key
+    ON daily_log_history (idempotency_key, revision)
+  ''',
+
+  // ---------------------------------------------------------------- 正向事件
+  '''
+  CREATE TABLE IF NOT EXISTS valence_event (
+    id TEXT PRIMARY KEY,
+    day_key TEXT NOT NULL,
+    behavior_code TEXT NOT NULL,
+    behavior_name TEXT NOT NULL,
+    slot_key TEXT NOT NULL DEFAULT '',
+    valence TEXT NOT NULL,
+    axis TEXT NOT NULL,
+    base_score REAL NOT NULL DEFAULT 0,
+    quality_bonus REAL NOT NULL DEFAULT 0,
+    efficiency_bonus REAL NOT NULL DEFAULT 0,
+    normalized_score REAL NOT NULL DEFAULT 0,
+    weight REAL NOT NULL DEFAULT 1,
+    state_multiplier REAL NOT NULL DEFAULT 1,
+    confidence_weight REAL NOT NULL DEFAULT 1,
+    exp REAL NOT NULL DEFAULT 0,
+    confidence TEXT NOT NULL DEFAULT 'selfReport',
+    notes_json TEXT NOT NULL DEFAULT '[]',
+    breakdown_json TEXT NOT NULL DEFAULT '{}',
+    estimated INTEGER NOT NULL DEFAULT 0
+  )
+  ''',
+  '''
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_valence_slot
+    ON valence_event (day_key, behavior_code, slot_key)
+  ''',
+  '''
+  CREATE INDEX IF NOT EXISTS ix_valence_day
+    ON valence_event (day_key)
+  ''',
+
+  // ---------------------------------------------------------------- 负向事件
+  '''
+  CREATE TABLE IF NOT EXISTS negative_event (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    day_key TEXT NOT NULL,
+    behavior_code TEXT NOT NULL,
+    behavior_name TEXT NOT NULL,
+    dose_minutes REAL NOT NULL DEFAULT 0,
+    penalty_units REAL NOT NULL DEFAULT 0,
+    exp REAL NOT NULL DEFAULT 0,
+    root_cause_key TEXT NOT NULL,
+    is_primary INTEGER NOT NULL DEFAULT 1,
+    suppressed_by TEXT,
+    consequences_json TEXT NOT NULL DEFAULT '[]',
+    recovery_hints_json TEXT NOT NULL DEFAULT '[]',
+    notes_json TEXT NOT NULL DEFAULT '[]'
+  )
+  ''',
+  // 部分唯一索引：只约束「主因」。同根因的后果记录（exp = 0）可以有多条。
+  '''
+  CREATE UNIQUE INDEX IF NOT EXISTS ux_negative_primary
+    ON negative_event (day_key, root_cause_key)
+    WHERE is_primary = 1
+  ''',
+  '''
+  CREATE INDEX IF NOT EXISTS ix_negative_day
+    ON negative_event (day_key, root_cause_key)
+  ''',
+
+  // ---------------------------------------------------------------- 能量账本
+  '''
+  CREATE TABLE IF NOT EXISTS energy_ledger (
+    day_key TEXT PRIMARY KEY,
+    intake_kcal REAL NOT NULL DEFAULT 0,
+    bmr REAL NOT NULL DEFAULT 0,
+    tef REAL NOT NULL DEFAULT 0,
+    exercise REAL NOT NULL DEFAULT 0,
+    epoc REAL NOT NULL DEFAULT 0,
+    neat REAL NOT NULL DEFAULT 0,
+    expenditure REAL NOT NULL DEFAULT 0,
+    training_efficiency REAL NOT NULL DEFAULT 0,
+    time_efficiency REAL NOT NULL DEFAULT 0,
+    balance_low REAL NOT NULL DEFAULT 0,
+    balance_high REAL NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+  )
+  ''',
+
+  // ---------------------------------------------------------------- 负荷索引
+  '''
+  CREATE TABLE IF NOT EXISTS load_index (
+    day_key TEXT PRIMARY KEY,
+    srpe_today REAL NOT NULL DEFAULT 0,
+    acute_7 REAL NOT NULL DEFAULT 0,
+    chronic_28 REAL NOT NULL DEFAULT 0,
+    acwr REAL,
+    band TEXT NOT NULL DEFAULT 'low',
+    damage_load REAL NOT NULL DEFAULT 0,
+    sleep_debt_hours REAL NOT NULL DEFAULT 0,
+    consecutive_high_days INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+  )
+  ''',
+
+  // ---------------------------------------------------------------- 当日结算
+  '''
+  CREATE TABLE IF NOT EXISTS day_settlement (
+    day_key TEXT PRIMARY KEY,
+    positive_exp REAL NOT NULL DEFAULT 0,
+    negative_exp REAL NOT NULL DEFAULT 0,
+    net_exp REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'settled',
+    state_before_json TEXT NOT NULL DEFAULT '{}',
+    state_after_json TEXT NOT NULL DEFAULT '{}',
+    alert_json TEXT,
+    notes_json TEXT NOT NULL DEFAULT '[]',
+    recovery_json TEXT NOT NULL DEFAULT '[]',
+    level_before INTEGER NOT NULL DEFAULT 0,
+    level_after INTEGER NOT NULL DEFAULT 0,
+    buffer_after REAL NOT NULL DEFAULT 0,
+    is_interruption INTEGER NOT NULL DEFAULT 0,
+    revision INTEGER NOT NULL DEFAULT 0,
+    computed_at TEXT NOT NULL
+  )
+  ''',
+
+  // ---------------------------------------------------------------- 能力快照
+  '''
+  CREATE TABLE IF NOT EXISTS ability_snapshot (
+    day_key TEXT PRIMARY KEY,
+    abilities_json TEXT NOT NULL DEFAULT '{}',
+    completeness_json TEXT NOT NULL DEFAULT '{}',
+    total_exp REAL NOT NULL DEFAULT 0,
+    level INTEGER NOT NULL DEFAULT 0,
+    buffer REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'settled',
+    computed_at TEXT NOT NULL
+  )
+  ''',
+
+  // ---------------------------------------------------------------- 预测点
+  '''
+  CREATE TABLE IF NOT EXISTS forecast_point (
+    day_key TEXT NOT NULL,
+    axis TEXT NOT NULL,
+    horizon_days INTEGER NOT NULL DEFAULT 0,
+    maintain REAL NOT NULL DEFAULT 0,
+    correct REAL NOT NULL DEFAULT 0,
+    low REAL NOT NULL DEFAULT 0,
+    high REAL NOT NULL DEFAULT 0,
+    confidence REAL NOT NULL DEFAULT 1,
+    is_projection INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day_key, axis, horizon_days)
+  )
+  ''',
+  '''
+  CREATE INDEX IF NOT EXISTS ix_forecast_day
+    ON forecast_point (day_key, axis)
+  ''',
+
+  // ---------------------------------------------------------------- 记忆条目
+  '''
+  CREATE TABLE IF NOT EXISTS memory_item (
+    id TEXT PRIMARY KEY,
+    word TEXT NOT NULL,
+    axis TEXT NOT NULL DEFAULT 'memory',
+    strength REAL NOT NULL DEFAULT 1,
+    coverage REAL NOT NULL DEFAULT 0,
+    review_count INTEGER NOT NULL DEFAULT 0,
+    active_recall INTEGER NOT NULL DEFAULT 1,
+    last_review_at TEXT,
+    next_review_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )
+  ''',
+  '''
+  CREATE INDEX IF NOT EXISTS ix_memory_due
+    ON memory_item (next_review_at)
+  ''',
+
+  // ---------------------------------------------------------------- 确认任务
+  '''
+  CREATE TABLE IF NOT EXISTS confirmation_task (
+    id TEXT PRIMARY KEY,
+    day_key TEXT,
+    behavior_code TEXT,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open',
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    due_at TEXT,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+  )
+  ''',
+  '''
+  CREATE INDEX IF NOT EXISTS ix_confirmation_due
+    ON confirmation_task (status, due_at)
+  ''',
+
+  // ---------------------------------------------------------------- 徽章
+  '''
+  CREATE TABLE IF NOT EXISTS badge (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL,
+    title TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    day_key TEXT,
+    earned_at TEXT NOT NULL
+  )
+  ''',
+
+  // ---------------------------------------------------------------- 配置覆盖
+  '''
+  CREATE TABLE IF NOT EXISTS config_override (
+    key TEXT PRIMARY KEY,
+    value REAL NOT NULL,
+    updated_at TEXT NOT NULL
+  )
+  ''',
+
+  // ---------------------------------------------------------------- 应用设置
+  kAppSettingTable,
+
+  // ---------------------------------------------------------------- 脏日队列
+  // 写入后只标 day_key，重算时从「最早的脏日」一路跑到今天。
+  // 这张表让「历史修正」跨进程也有效：进程被杀不会丢重算任务。
+  '''
+  CREATE TABLE IF NOT EXISTS dirty_day (
+    day_key TEXT PRIMARY KEY,
+    reason TEXT NOT NULL DEFAULT 'write',
+    marked_at TEXT NOT NULL
+  )
+  ''',
+];

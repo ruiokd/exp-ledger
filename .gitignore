@@ -1,0 +1,25 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+.idea/
+
+# Android
+android/local.properties
+android/.gradle/
+android/key.properties
+*.jks
+*.keystore
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 本地临时
+*.log
+/android/app/debug/
+/android/app/profile/
+/android/app/release/

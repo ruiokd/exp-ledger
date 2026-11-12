@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动主题：白底，避免冷启动时闪一下暗色。 -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">#FBF8F4</item>
+    </style>
+
+    <!-- 正常主题：Flutter 自己画所有界面，这里只保证窗口底色一致。 -->
+    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowBackground">#FBF8F4</item>
+    </style>
+</resources>
