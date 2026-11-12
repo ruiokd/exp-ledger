@@ -10,6 +10,9 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // flutter_local_notifications 的 AAR 要求开这个（minSdk < 26 时用于
+        // 把 java.time 等 API 反向移植）。不开会在 checkReleaseAarMetadata 直接失败。
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -38,4 +41,6 @@ flutter {
     source = "../.."
 }
 
-dependencies {}
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+}
