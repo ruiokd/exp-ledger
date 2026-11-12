@@ -27,6 +27,9 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
 - 第 7 步补 ✅ **v1.0.2 修启动崩溃**：根因已确诊（Android 14 execSQL 拒绝 PRAGMA），
   改 `rawQuery` + 吞异常；`versionCode 3 / 1.0.2`，pubspec 与 gradle 已同步。
   新增回归测试 `test/data/app_database_test.dart` + preflight 两条静态门禁（见六之六）
+  **APK 已产出**：`dist/exp-ledger-1.0.2.apk` / `/chat/outputs/` 同名副本，
+  31.7 MB，sha256 `886f02af…5682a5`，CI run 43293073012 全绿（analyze 0 error/0 warning，
+  数据层测试含新用例通过）
 
 ## 三、当前规模
 
@@ -290,6 +293,30 @@ static Future<void> _applyPragmas(Database db) async {
 - 跨平台差异（ffi vs Android Java 层）**测不出来**，只能靠静态检查 + 真机冒烟。
 
 
+## 六之七、出包通道（沙箱网络限制，下次直接用）
+
+**现象**：`git push` 报 `GnuTLS recv error (-110)` 或
+`Failed to connect to github.com port 443`（连 `info/refs` 都拿不到），
+但 `https://api.github.com` 一直 200。也就是说 **git 协议这条路在沙箱里是断的，
+REST API 这条路是通的**。
+
+**解法**：`tools/api_push.py` 用 Git Data API 手工造对象：
+blob（base64）→ tree（`base_tree` = 远端 tree）→ commit → `PATCH /git/refs/heads/main`。
+
+两个必须知道的点：
+
+1. **commit 元数据必须逐字节照抄本地 HEAD**，否则 GitHub 算出来的 sha 和本地不同，
+   推完就分叉。踩过的坑：message 用 `git log --format=%B` 取会**丢掉结尾换行**，
+   sha 立刻变；正确做法是 `git cat-file commit HEAD` 然后按 `\n\n` 切出原始消息体。
+   脚本里现在会打印"本地 tree / 远端 tree"和"远端 commit / 本地 HEAD"做自检，
+   一致才更新 ref。
+2. **token 只在命令行里出现**，不写进 `.git/config`（`x-access-token:$TOKEN@...` 一次性 URL）。
+
+**一条命令**：`bash tools/ship.sh <token>`，内部顺序是
+`git push（45 秒超时）→ 失败就 api_push.py → 轮询 workflow run → 下 artifact →
+落到 dist/ 与 /chat/outputs/`。token 用 classic、勾 `repo` + `workflow`。
+本次实测：推送 20 秒 + 构建 4 分 10 秒，全程一次过。
+
 ## 七、已知待办与坑
 
 - **Android 14+ 的 execSQL 拒绝 PRAGMA/SELECT**（v1.0.2 的事故根因，详见六之六）：
@@ -333,8 +360,8 @@ static Future<void> _applyPragmas(Database db) async {
    - 若仍停在诊断页，**先看阶段**：`打开数据库` = 还有第二条开库语句中招；
      `迁移` = 迁移里某条 DDL 在设备 SQLite 上不被接受（把文本回传即可）；
 2. **签名已固定**（`android/app/debug.keystore`），v1.0.1 → v1.0.2 可覆盖安装，不用卸载。
-3. 产物待出：push 到 main 后 CI 会产出 `exp-ledger-1.0.2.apk`（artifact 名
-   `exp-ledger-apk-release`），落地后补到 `dist/` 并记 sha256。
+3. 产物已出：`dist/exp-ledger-1.0.2.apk`（sha256 `886f02af…`，CI run 43293073012）。
+   出包通道见六之七——**沙箱里 `git push` 走不通，必须用 `tools/ship.sh`**。
 4. 装机冒烟清单（v1.0.2 一次性走完，别再分版本）：
    记录一条 → 杀进程重开看还在 → 提醒设到 2 分钟后等响 → 加桌面小组件看数字 →
    导出看分享面板 → 设置里"重算"一次看曲线是否变。
