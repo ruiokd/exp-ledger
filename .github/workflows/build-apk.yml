@@ -11,6 +11,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: '构建类型：release 或 debug'
+        required: false
+        default: 'release'
 
 jobs:
   android:
@@ -71,13 +76,19 @@ jobs:
       - name: 数据层测试
         run: flutter test test/data/ --reporter compact
 
-      - name: 打包 release
-        run: flutter build apk --release --target-platform android-arm64,android-arm
+      - name: 打包
+        run: |
+          if [ "${{ github.event.inputs.mode }}" = "debug" ]; then
+            echo "构建 debug 包（错误会显示红屏详情）"
+            flutter build apk --debug
+          else
+            flutter build apk --release --target-platform android-arm64,android-arm
+          fi
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
-          name: exp-ledger-apk
+          name: exp-ledger-apk-${{ github.event.inputs.mode || 'release' }}
           path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
           retention-days: 30
