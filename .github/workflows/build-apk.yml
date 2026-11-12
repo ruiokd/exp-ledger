@@ -33,6 +33,21 @@ jobs:
           channel: stable
           cache: true
 
+      # 仓库里只有 gradle-wrapper.properties：wrapper 的 jar 是二进制，
+      # 在开发沙箱里生成不了。这里用 flutter create 生成一份完整模板，
+      # 只把 wrapper 相关文件复制过来，绝不碰手写的 manifest 与 Kotlin。
+      - name: 补齐 Gradle wrapper
+        run: |
+          flutter create --platforms=android --project-name exp_ledger /tmp/probe > /dev/null
+          cp -r /tmp/probe/android/gradle android/
+          cp /tmp/probe/android/gradlew /tmp/probe/android/gradlew.bat android/
+          chmod +x android/gradlew
+          echo "--- wrapper 文件："
+          ls -l android/gradle/wrapper/ android/gradlew
+          echo "--- 确认手写文件没被动："
+          head -3 android/app/src/main/AndroidManifest.xml
+          grep -c "namespace" android/app/build.gradle.kts
+
       - name: 静态检查（不需要 SDK 那部分）
         run: |
           python3 tools/check_symbols.py
