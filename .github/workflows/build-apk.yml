@@ -39,11 +39,17 @@ jobs:
       - name: 补齐 Gradle wrapper
         run: |
           flutter create --platforms=android --project-name exp_ledger /tmp/probe > /dev/null
-          cp -r /tmp/probe/android/gradle android/
+          # 只补 jar 与启动脚本，不覆盖 properties：
+          # 模板默认 Gradle 8.3，而 AGP 8.3.2 要求 >= 8.4，
+          # 仓库里写的是 8.7，必须保留。
+          mkdir -p android/gradle/wrapper
+          cp /tmp/probe/android/gradle/wrapper/gradle-wrapper.jar android/gradle/wrapper/
           cp /tmp/probe/android/gradlew /tmp/probe/android/gradlew.bat android/
           chmod +x android/gradlew
           echo "--- wrapper 文件："
           ls -l android/gradle/wrapper/ android/gradlew
+          echo "--- distributionUrl（应为 8.7）："
+          grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties
           echo "--- 确认手写文件没被动："
           head -3 android/app/src/main/AndroidManifest.xml
           grep -c "namespace" android/app/build.gradle.kts
