@@ -20,10 +20,13 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   （`AppShell` 五 tab，FAB 只在非设置页出现）
 - 第 6 步 ✅ 通知 / 导出 / 主题规范 / 桌面小组件
   （本地提醒、share_plus 导出、63 系数收进 Tokens、Kotlin AppWidget + MethodChannel）
-- 第 7 步 ✅ 构建打包：CI 已跑通，**APK 已产出**
+- 第 7 步 ✅ 构建打包：CI 已跑通，**APK 已产出**（v1.0.1 签名固定）
   仓库 https://github.com/ruiokd/exp-ledger（公开）
   产物 `dist/exp-ledger-1.0.0.apk`（31MB，arm64 + armv7，sha256 9929d479…）
   沙箱仍是 aarch64，产不出 APK；构建在 GitHub Actions 的 x64 runner 上完成
+- 第 7 步补 ✅ **v1.0.2 修启动崩溃**：根因已确诊（Android 14 execSQL 拒绝 PRAGMA），
+  改 `rawQuery` + 吞异常；`versionCode 3 / 1.0.2`，pubspec 与 gradle 已同步。
+  新增回归测试 `test/data/app_database_test.dart` + preflight 两条静态门禁（见六之六）
 
 ## 三、当前规模
 
@@ -55,7 +58,10 @@ Android 平台层 14 个文件（Kotlin + manifest + res）。测试 9 个文件
 - 负向剂量取 `max(熬夜越界分钟, 睡眠缺口×60)`，**不相加**（否则一次熬夜罚两遍）。
 - 负向 EXP **不乘状态乘数**（否则同一件事被罚两次）。
 - 超额判定顺序不可交换：疲劳 → ACWR → 恢复间隔 → 才算有益超额。
-- 归因键格式 `behaviorCode@yyyy-MM-dd`，同键只扣罚得最重的那条。
+- **写库语句的分工**：`execute` 只跑没有结果集的 DDL/DML；`PRAGMA`/`SELECT`/`EXPLAIN`
+  一律 `rawQuery`。Android 14 起违反这条会在 `execSQL` 抛异常，而 `onConfigure` 里中招
+  就是启动崩溃（六之六的事故）。开库钩子里的每条语句都要 try/catch。
+- **归因键格式** `behaviorCode@yyyy-MM-dd`，同键只扣罚得最重的那条。
 
 ## 六、数据层结构（第 4 步产物，改之前必看）
 
@@ -201,24 +207,100 @@ record / 增强枚举 / switch 表达式 / 字符串插值，比手写括号计�
 
 **根因判断**：`runApp` 之前的 await 一旦抛异常或挂起，界面永远不会被创建；
 因为没有 native crash，系统也不弹错误框，用户只能看到黑屏。
-（是不是 sqflite 挂起还是迁移抛错，需要 v1.0.1 的诊断页给出确切文本才能定。）
+（当时是"抛异常还是挂起"两种可能，v1.0.1 的诊断页给出了答案：**抛异常**，见六之六。）
 
 **修法（v1.0.1）**：
 - 开库加 8 秒超时 + `try/catch`，失败渲染 `StartupFailureApp`（带阶段、错误、堆栈、复制按钮）
 - 覆盖 `ErrorWidget.builder`：release 的灰屏换成可读页面
 - 失败页带「再试一次」，重跑完整 boot 流程
 
+**v1.0.1 已发布**（commit b49d21d，versionCode 2）：
+- 签名已固定：`android/app/debug.keystore` 进仓库，CI 与本地同指纹
+  （SHA-256 `56:44:75:47…D2:71:52`），以后构建可直接覆盖升级；
+  v1.0.0 → v1.0.1 仍需卸载一次（旧包的临时签名无法复现）。
+- 待办：~~等用户回传诊断页文本~~ **已回传，根因已确诊 → 见六之六**。
+
 **教训（写进技能）**：
 - `runApp` 之前只允许"极轻、带超时、可失败"的操作；
 - 任何 release 包都必须有"启动失败也能说话"的路径，否则用户只看到黑屏，排查成本极高；
 - 用户描述"卡"往往是"启动失败被反复重试"，不是设备性能问题。
+- 诊断页的第一版设计是对的：**把阶段 + 原文 + 堆栈一起显示**，否则一行
+  `DatabaseException` 根本猜不出是不是自己写的 SQL。
+
+## 六之六、事故记录：v1.0.1 启动崩溃（Android 14 / PRAGMA）— 已确诊并修复
+
+**用户回传的诊断页原文**（v1.0.1，装机即现）：
+
+```
+阶段：打开数据库
+错误：DatabaseException(unknown error (code 0 SQLITE_OK):
+      Queries can be performed using SQLiteDatabase query or rawQuery methods only.)
+      sql 'PRAGMA busy_timeout = 5000' args []
+#3 AppDatabase.open.<anonymous closure> (package:exp_ledger/data/db/app_database.dart:52)
+```
+
+**根因（不是猜的，是异常文本直接给出的）**：
+
+`lib/data/db/app_database.dart:52` 的 `onConfigure` 里写了
+`await db.execute('PRAGMA busy_timeout = 5000')`。sqflite 的 `execute` 在 Android 上
+落到 `SQLiteDatabase.execSQL`，而 **Android 14（API 34）起 execSQL 会拒绝"可能返回
+结果集"的语句**（PRAGMA / SELECT / EXPLAIN），抛的正是上面那句
+`Queries can be performed using SQLiteDatabase query or rawQuery methods only.`。
+`code 0 SQLITE_OK` 是 sqflite 包装时的假码，看着像"成功"，实际是 Java 层抛的。
+
+它发生在 `onConfigure`，所以：开库整体失败 → `main()` 里 `runApp` 之前的 await 抛异常
+→ 界面从不创建 → 黑屏（v1.0.1 有诊断页，于是变成可读文本）。**不是挂起、不是迁移、
+不是脏数据、不是签名。** 迁移代码根本没跑到。
+
+**修法（v1.0.2）**：
+
+```dart
+static Future<void> _applyPragmas(Database db) async {
+  const List<String> pragmas = <String>['PRAGMA busy_timeout = 5000'];
+  for (final String sql in pragmas) {
+    try {
+      await db.rawQuery(sql);          // PRAGMA 一律 rawQuery，永不 execute
+    } catch (error) {
+      developer.log('PRAGMA 未生效，继续启动：$sql', name: 'AppDatabase', error: error);
+    }
+  }
+}
+```
+
+两条一起改才算修好：**换 API**（PRAGMA 走 `rawQuery`）+ **吞异常**（一条性能调优语句
+不该有能力拦住启动；失败就退回默认 busy_timeout=0，功能不受影响）。
+
+**为什么测试没抓到**：数据层测试跑的是 `sqflite_common_ffi`，不经过 Java 的 execSQL，
+`execute('PRAGMA ...')` 在 ffi 上照样"成功"。所以补了两道**静态**门禁：
+
+| 门禁 | 位置 | 挡什么 |
+|---|---|---|
+| `test/data/app_database_test.dart` | `flutter test test/data/` | 源码里出现 `execute('PRAGMA` 就红 + 断言 busy_timeout 真为 5000 |
+| `preflight.sh` 第 4b 节 | CI 打包前 | `grep -E "\.execute\(\s*['\"](PRAGMA\|SELECT\|EXPLAIN)" lib/` 有命中就红 |
+
+**顺手补的第 4c 节**：`pubspec.yaml` 的 `version:` 与 gradle 的 `versionCode/versionName`
+必须一致——这次就发现 pubspec 还停在 `1.0.0+1` 而 gradle 已经 `1.0.1/2`，
+不一致的后果是"装了新包但看不出是新包"，以后排查会更费。
+
+**教训**：
+- `onConfigure` / `onOpen` 这种开库钩子里，**只许写不会失败的东西**；PRAGMA、索引优化、
+  版本自检一律 try/catch 包住，失败继续。开库钩子抛异常 = 整个 App 起不来。
+- 写库语句的规矩：`execute` 只跑没有结果集的 DDL/DML；`PRAGMA`/`SELECT`/`EXPLAIN`
+  一律 `rawQuery`。Android 14 把这条从"风格问题"升级成了"启动崩溃"。
+- 跨平台差异（ffi vs Android Java 层）**测不出来**，只能靠静态检查 + 真机冒烟。
+
 
 ## 七、已知待办与坑
 
-- **`android/gradle/wrapper/gradle-wrapper.jar` 还没有**（生成不了二进制）。
-  第 7 步第一件事：先 `cp -r android android.bak`，再 `flutter create --platforms=android .`
-  补齐 wrapper jar / local.properties / .gitignore，然后 `diff -r android.bak android`
-  确认它没覆盖手写的 manifest 与 Kotlin 文件。
+- **Android 14+ 的 execSQL 拒绝 PRAGMA/SELECT**（v1.0.2 的事故根因，详见六之六）：
+  写库语句里 `execute` 只能跑 DDL/DML，查询类一律 `rawQuery`；开库钩子里的语句
+  必须 try/catch。代价是黑屏整整一个版本。
+- `foreign_keys` 目前在 Android 上**没有显式打开**，而 `tools/schema_check.py` 是打开后
+  验 DDL 的、级联删除也确实依赖 FK。要在 `_applyPragmas` 里加
+  `PRAGMA foreign_keys = ON` 必须先确认每个仓储的删除顺序都靠 CASCADE 而不是靠"手删子表"，
+  否则会引入新的 ForeignKeyViolation。**别顺手加**，单独一版做，配 DeletingOrder 测试。
+- `android/gradle/wrapper/gradle-wrapper.jar` 还是没有（沙箱生成不了二进制），
+  CI 用 `flutter create` 现场补 —— 见七之四那张失败表第 1 行。
 - Android 工程**从未构建过**（沙箱没有 SDK 与 Gradle）。
 - 第 3 步的 domain 代码在接入 `parse_dart.py` 之前**从未做过语法验证**；
   已发现 1 处（`late` 变量名）并修复。语法通过 ≠ 类型通过，`flutter analyze` 仍可能报错。AGP 8.3.2 + Gradle 8.7 +
@@ -243,20 +325,30 @@ record / 增强枚举 / switch 表达式 / 字符串插值，比手写括号计�
 - `day_settlement.revision` = 这一天被重算过几次（删除前先读旧值再加一）；
   不是"用户修订次数"，用户修订看 `daily_log.revision` + `daily_log_history`。
 
+## 七之补、当前卡点（新对话第一眼要看）
+
+1. **启动崩溃已确诊并修好**（v1.0.2：PRAGMA 改 rawQuery + 吞异常，见六之六）。
+   待办只剩"装机验证"：装 v1.0.2 →
+   - 能进首页 = 修对了；
+   - 若仍停在诊断页，**先看阶段**：`打开数据库` = 还有第二条开库语句中招；
+     `迁移` = 迁移里某条 DDL 在设备 SQLite 上不被接受（把文本回传即可）；
+2. **签名已固定**（`android/app/debug.keystore`），v1.0.1 → v1.0.2 可覆盖安装，不用卸载。
+3. 产物待出：push 到 main 后 CI 会产出 `exp-ledger-1.0.2.apk`（artifact 名
+   `exp-ledger-apk-release`），落地后补到 `dist/` 并记 sha256。
+4. 装机冒烟清单（v1.0.2 一次性走完，别再分版本）：
+   记录一条 → 杀进程重开看还在 → 提醒设到 2 分钟后等响 → 加桌面小组件看数字 →
+   导出看分享面板 → 设置里"重算"一次看曲线是否变。
+
 ## 八、续接提示词（新会话直接粘这段）
 
 > 继续做经验账本项目。先读 `/workspace/exp_ledger/STATE.md`，
 > 里面是完整的进度、架构铁律、数据层结构与实现约定。
-> 数据层已完成（17 张表 / 幂等写入 / 级联重算 / test/data 三个测试）。
-> 第 6 步已完成。现在开始第 7 步：构建打包。
-> 顺序：① 备份 android/ → `flutter create --platforms=android .` 补 wrapper →
-> `diff -r` 确认没覆盖手写文件；② `flutter pub get`；③ `flutter analyze`，
-> 按报错逐个修（重点怀疑：Riverpod family 的回调签名、record 泛型、
-> `dart:ui` 的 PathMetric、flutter_local_notifications 17 的权限 API）；
-> ④ `flutter test test/data/`（sqflite_common_ffi，不需要模拟器）；
-> ⑤ `flutter build apk --debug` → 装机实测：记录一条 → 杀进程重开看是否还在 →
-> 打开提醒等它响 → 桌面加小组件看数字是否跟着变 → 导出看分享面板。
-> 全绿后写一份依赖清单与已知限制。
+> 现状：第 1–7 步全部完成，v1.0.1 的启动崩溃已在 v1.0.2 确诊并修好
+> （Android 14 execSQL 拒绝 PRAGMA → 改 rawQuery + 吞异常，见 STATE 六之六）。
+> 下一件事：push 到 main 触发 CI 出 `exp-ledger-1.0.2.apk`，装机走七之补的冒烟清单；
+> 若有新报错，先看诊断页的「阶段」再动手。
+> 之后可以做的：饮食采集入口（补 `intakeKcal`）、`PRAGMA foreign_keys = ON`
+> （需先审删除顺序）、把 `tools/parse_dart.py` 的坑写进 skill。
 
 ## 九、交付给用户时的语气约定
 

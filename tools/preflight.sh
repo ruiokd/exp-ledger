@@ -75,6 +75,32 @@ else
   note "没有 python3，跳过静态检查"
 fi
 
+echo "== 4b. Android 14 兼容：PRAGMA 不许走 execute =="
+# Android 14（API 34）起 SQLiteDatabase.execSQL 拒绝"可能返回结果集"的语句
+# （PRAGMA / SELECT / EXPLAIN），抛
+#   Queries can be performed using SQLiteDatabase query or rawQuery methods only.
+# 在 onConfigure 里中招就是启动黑屏。这条在 ffi 测试里复现不了，只能静态查。
+PRAGMA_HITS=$(grep -rn --include='*.dart' -E "\.execute\(\s*['\"](PRAGMA|SELECT|EXPLAIN)" lib/ 2>/dev/null)
+if [ -n "$PRAGMA_HITS" ]; then
+  bad "execute() 跑了 PRAGMA/SELECT（Android 14 会抛异常），改成 rawQuery："
+  printf '%s\n' "$PRAGMA_HITS"
+else
+  ok "没有 execute() 跑 PRAGMA/SELECT"
+fi
+
+echo "== 4c. 版本号一致性（pubspec ↔ gradle）=="
+PUB_VER=$(grep -E '^version:' pubspec.yaml | awk '{print $2}')
+PUB_NAME=${PUB_VER%%+*}
+PUB_CODE=${PUB_VER##*+}
+GRD_NAME=$(grep -o 'versionName = "[^"]*"' android/app/build.gradle.kts | cut -d'"' -f2)
+GRD_CODE=$(grep -o 'versionCode = [0-9]*' android/app/build.gradle.kts | awk '{print $3}')
+note "pubspec=$PUB_VER gradle=$GRD_NAME+$GRD_CODE"
+if [ "$PUB_NAME" = "$GRD_NAME" ] && [ "$PUB_CODE" = "$GRD_CODE" ]; then
+  ok "版本号一致"
+else
+  bad "版本号不一致：两处都要改，否则装上去看不出是新包"
+fi
+
 echo "== 5. 依赖清单 =="
 note "flutter_riverpod ^2.5.1 / sqflite ^2.3.3 / flutter_local_notifications ^17.2.1"
 note "share_plus ^9.0.0 / timezone ^0.9.2 / path_provider ^2.1.3 / fl_chart ^0.68.0"
