@@ -23,3 +23,6 @@ Thumbs.db
 /android/app/debug/
 /android/app/profile/
 /android/app/release/
+
+# 构建产物走 GitHub Release，不进 git 历史
+dist/

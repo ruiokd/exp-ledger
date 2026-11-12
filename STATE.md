@@ -20,9 +20,10 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   （`AppShell` 五 tab，FAB 只在非设置页出现）
 - 第 6 步 ✅ 通知 / 导出 / 主题规范 / 桌面小组件
   （本地提醒、share_plus 导出、63 系数收进 Tokens、Kotlin AppWidget + MethodChannel）
-- 第 7 步 🟡 构建打包：CI / 脚本 / 报错预案已就绪（`STEP7-BUILD.md`），
-  **沙箱产不出 APK**（aarch64 + build-tools 仅 x86_64）。拿到 APK 的最快路径：
-  推 GitHub → Actions 跑 `build-apk` → 下载 `exp-ledger-apk`
+- 第 7 步 ✅ 构建打包：CI 已跑通，**APK 已产出**
+  仓库 https://github.com/ruiokd/exp-ledger（公开）
+  产物 `dist/exp-ledger-1.0.0.apk`（31MB，arm64 + armv7，sha256 9929d479…）
+  沙箱仍是 aarch64，产不出 APK；构建在 GitHub Actions 的 x64 runner 上完成
 
 ## 三、当前规模
 
@@ -142,6 +143,22 @@ android/
   "改了个提醒时间把曲线重算了"。
 
 ## 六之四、构建（第 7 步现状）
+
+**已跑通**：2026-11-12 第一次成功构建（5 分 40 秒），产物是 31MB 的
+`app-release.apk`，manifest 里 `com.yg.ledger` / `MainActivity` /
+`LedgerWidgetProvider` / `POST_NOTIFICATIONS` / `RECEIVE_BOOT_COMPLETED` 都在，
+`INTERNET` **不在**（验证了"全本地"这条承诺）。
+
+六次失败与修法（顺序即真实排查顺序，下次直接按这张表走）：
+
+| # | 报错 | 原因 | 修法 |
+|---|---|---|---|
+| 1 | 预检失败 | 仓库里只有 `gradle-wrapper.properties`，缺 jar 与 gradlew | CI 里用 `flutter create` 生成模板，只复制 jar 与 gradlew |
+| 2 | `pub get` 版本无解 | `test ^1.25.8` 要 test_api 0.7.3+，Flutter 3.24.5 钉 0.7.2 | `test: ^1.25.7` |
+| 3 | analyze 8 error | 配置表重复键、缺 num_ext、notification 缺 `uiLocalNotificationDateInterpretation`、测试签名不同步 | 逐个修，详见提交 `29fb859` |
+| 4 | 测试 `Bad state: No element` | 用例漏了 `commit` 就去读库 | 补 commit |
+| 5 | `Minimum supported Gradle version is 8.4` | `flutter create` 的模板 wrapper 是 8.3，覆盖了仓库里的 8.7 | 复制 wrapper 时**排除** properties |
+| 6 | `requires core library desugaring` | flutter_local_notifications 的 AAR 硬要求（minSdk < 26） | `isCoreLibraryDesugaringEnabled = true` + `desugar_jdk_libs:2.0.4` |
 
 **沙箱产不出 APK，原因不是缺 SDK，是架构。** `aapt2` / `zipalign` 只有 x86_64
 的 ELF，在 aarch64 上直接 `Exec format error`；本机没有 qemu/box64，
