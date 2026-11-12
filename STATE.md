@@ -187,6 +187,32 @@ record / 增强枚举 / switch 表达式 / 字符串插值，比手写括号计�
 **它抓出了第 3 步留下的真 bug**：`valence_engine.dart` 里把变量命名为 `late`
 （Dart 内置标识符），那一行必然编译失败。
 
+## 六之五、事故记录：v1.0.0 装机黑屏（2026-11-12）
+
+**现象**：装上能打开但全黑，屏幕里一个 UI 节点都没有；系统不弹"应用已停止"；
+反复点开后手机明显变卡。
+
+**定位过程**（都做了，别再重走）：
+1. `phone_control.read_screen` → App 在前台，只有空 `FrameLayout`，**Flutter 首帧没渲染**；
+2. 设置里清除数据（数据 20.48 KB → 0）→ 重开仍黑屏 → **不是脏数据/迁移问题**；
+3. 拆 APK 查 dex：`GeneratedPluginRegistrant` / `SqflitePlugin` / `dexterous/flutterlocalnotifications`
+   都在 → **不是插件没注册**；
+4. 看 `main.dart`：`await AppDatabase.open()` 在 `runApp` **之前且无保护**。
+
+**根因判断**：`runApp` 之前的 await 一旦抛异常或挂起，界面永远不会被创建；
+因为没有 native crash，系统也不弹错误框，用户只能看到黑屏。
+（是不是 sqflite 挂起还是迁移抛错，需要 v1.0.1 的诊断页给出确切文本才能定。）
+
+**修法（v1.0.1）**：
+- 开库加 8 秒超时 + `try/catch`，失败渲染 `StartupFailureApp`（带阶段、错误、堆栈、复制按钮）
+- 覆盖 `ErrorWidget.builder`：release 的灰屏换成可读页面
+- 失败页带「再试一次」，重跑完整 boot 流程
+
+**教训（写进技能）**：
+- `runApp` 之前只允许"极轻、带超时、可失败"的操作；
+- 任何 release 包都必须有"启动失败也能说话"的路径，否则用户只看到黑屏，排查成本极高；
+- 用户描述"卡"往往是"启动失败被反复重试"，不是设备性能问题。
+
 ## 七、已知待办与坑
 
 - **`android/gradle/wrapper/gradle-wrapper.jar` 还没有**（生成不了二进制）。

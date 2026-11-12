@@ -13,6 +13,8 @@ android/.gradle/
 android/key.properties
 *.jks
 *.keystore
+# 固定的自用签名（不是发布密钥，密码就是标准 debug 密码）
+!android/app/debug.keystore
 
 # 系统
 .DS_Store
