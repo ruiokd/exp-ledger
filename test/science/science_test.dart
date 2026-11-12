@@ -92,9 +92,9 @@ void main() {
     });
 
     test('RIR 越低强度系数越高，但封顶 1.0', () {
-      expect(intensityFactorFromRir(0), 1.0);
-      expect(intensityFactorFromRir(4), 0.8);
-      expect(intensityFactorFromRir(10), 0.55);
+      expect(intensityFactorFromRir(0, kDefaultConfig), 1.0);
+      expect(intensityFactorFromRir(4, kDefaultConfig), 0.8);
+      expect(intensityFactorFromRir(10, kDefaultConfig), 0.55);
     });
 
     test('Epley：100kg × 5 次 → 116.7；超过 12 次不外推', () {
@@ -155,7 +155,6 @@ void main() {
   });
 
   group('ACWR 区间判定', () {
-    const cfg = kDefaultConfig;
     final today = DayKey(2025, 6, 28);
 
     Map<DayKey, double> constant(double v, int days) => {

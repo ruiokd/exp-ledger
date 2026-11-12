@@ -1,4 +1,3 @@
-import 'package:exp_ledger/core/theme/app_theme.dart';
 import 'package:exp_ledger/core/theme/tokens.dart';
 import 'package:exp_ledger/domain/capture/capture_state.dart';
 import 'package:exp_ledger/domain/capture/capture_state_machine.dart';
@@ -30,7 +29,6 @@ class QuestionStep extends StatefulWidget {
 class _QuestionStepState extends State<QuestionStep> {
   double _number = 0;
   int _minutes = 0;
-  String? _questionId;
 
   @override
   void initState() {
@@ -48,7 +46,6 @@ class _QuestionStepState extends State<QuestionStep> {
 
   void _syncWithQuestion() {
     final q = widget.state.current;
-    _questionId = q?.id;
     if (q == null) return;
     final spec = q.numberSpec;
     if (spec == null) return;

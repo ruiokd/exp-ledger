@@ -2,7 +2,6 @@ import 'package:exp_ledger/app.dart';
 import 'package:exp_ledger/data/data.dart';
 import 'package:exp_ledger/presentation/providers.dart';
 import 'package:exp_ledger/services/notification_service.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

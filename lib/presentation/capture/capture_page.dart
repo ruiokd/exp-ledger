@@ -1,4 +1,3 @@
-import 'package:exp_ledger/core/theme/app_theme.dart';
 import 'package:exp_ledger/core/theme/tokens.dart';
 import 'package:exp_ledger/domain/capture/capture_state.dart';
 import 'package:exp_ledger/domain/capture/capture_state_machine.dart';

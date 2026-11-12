@@ -1,4 +1,3 @@
-import '../enums.dart';
 
 /// 五个能力维度。权重在 BalanceConfig 里，这里只做身份标识。
 enum ProjectAxis {

@@ -84,6 +84,9 @@ class NotificationService {
           priority: Priority.defaultPriority,
         ),
       ),
+      // iOS 侧需要这个参数（Android 不用），但签名里是 required。
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.time,
     );

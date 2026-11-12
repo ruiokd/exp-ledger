@@ -316,7 +316,7 @@ void main() {
     test('累计 100 经验到 1 级，缓冲池封顶在 35%', () {
       final s = applyExp(LevelState.zero, 100);
       expect(s.level, 1);
-      final cap = levelSpan(1) * cfg.levelBufferRatio;
+      final cap = levelSpan(1, cfg) * cfg.levelBufferRatio;
       expect(s.buffer, closeTo(cap < 35 ? cap : 35, 1e-9));
     });
 

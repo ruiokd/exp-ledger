@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:exp_ledger/core/config/balance_config.dart';
-import 'package:exp_ledger/core/theme/app_theme.dart';
 import 'package:exp_ledger/core/theme/tokens.dart';
 import 'package:exp_ledger/data/repository/capture_repository.dart';
 import 'package:exp_ledger/domain/behaviors/behavior_library.dart';

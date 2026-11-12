@@ -4,7 +4,6 @@ import 'package:exp_ledger/domain/capture/capture_state.dart';
 import 'package:exp_ledger/domain/capture/capture_state_machine.dart';
 import 'package:exp_ledger/domain/capture/intent_matcher.dart';
 import 'package:exp_ledger/presentation/capture/capture_controller.dart';
-import 'package:exp_ledger/presentation/capture/widgets/option_tile.dart';
 import 'package:flutter/material.dart';
 
 /// S1：只说人话。
