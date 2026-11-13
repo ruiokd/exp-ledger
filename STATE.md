@@ -40,6 +40,11 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   用户确认）／四档横轴「先验空心点 vs 实测实心点」小图
   schema 升到 **v3**（4 张新表，既有 17 张一条未改）；版本号 `1.1.0+4`
   静态验收全绿（parse 136 文件 / 符号 359 / DDL 真 SQLite / preflight 4d 三道边界守卫）
+  **APK 已产出**：`dist/exp-ledger-1.1.0.apk` 与 `/chat/outputs/` 同名副本，
+  31.0 MB，sha256 `403c0176c2888c22…`，CI run 43352669660 全绿
+  （analyze 0 error / 0 warning；`test/data/` + `test/anchor/` 全通过）。
+  manifest 已验：`INTERNET` **不在**，`POST_NOTIFICATIONS` / `RECEIVE_BOOT_COMPLETED` 在，
+  `versionName 1.1.0` / `versionCode 4`
 
 ## 三、当前规模
 
@@ -446,14 +451,12 @@ CI 一直只跑 `flutter test test/data/`，所以 `test/engine` 与 `test/captu
 
 ## 七之补、当前卡点（新对话第一眼要看）
 
-1. **第 8 步全链路已在仓库里，但没经过真编译器**：
-   `flutter analyze` + `flutter test test/anchor/ test/data/anchor_repository_test.dart`
-   一次都没跑过（沙箱无 SDK）。这是当前唯一的技术风险——UI 层有 1.5k 行 Flutter 代码，
-   静态检查只保证语法和 import，保证不了类型。
-   报错预案按概率排序：① `SoftCard`/`AppColors` 之类主题符号在 anchor_page 里没用到（应该不会）；
-   ② `StatefulBuilder` 里 `Navigator.of(ctx)` 的 ctx 遮蔽；③ `DropdownButton` 的泛型推断；
-   ④ `AnchorCatalog()` 默认构造在 const 上下文里被误用（`AnchorPage` 的 `catalog` 是可空字段，
-   `const AnchorPage()` 合法，但 `_catalog` getter 每次都 new 一个库里对象，属可接受开销）。
+1. **v1.1.0 已出包，等装机验证**：装 `dist/exp-ledger-1.1.0.apk`（覆盖安装，签名没换）。
+   冒烟顺序：设置页 →「刻度标定」→ 挑 3 项 → 逐项定单位 → 声明量级 → 保存 →
+   回列表看卡片（先验标签 + 四档小图空心点）→ 记一次实测 → 看文案是否变成
+   「你当初估的是…实测接近…」→ 退出重进看还在。
+   若某一步白屏/报错，先看 `flutter test` 有没有覆盖到的那块（domain 有 4 个测试文件），
+   再回 `AnchorEngine` 的四个门排查。
 2. **启动崩溃已确诊并修好**（v1.0.2：PRAGMA 改 rawQuery + 吞异常，见六之六）。
    待办只剩"装机验证"：装 v1.0.2 →
    - 能进首页 = 修对了；
