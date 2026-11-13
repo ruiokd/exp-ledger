@@ -9,21 +9,27 @@ import 'axis_registry.dart';
 /// 量什么。决定采集页问哪个问题，也决定哪些行为根本不该有"剂量曲线"。
 enum MeasureKind {
   /// 时长：分钟。适合阅读、训练、陪伴。
-  durationMin('时长', '分钟'),
+  durationMin('时长', '分钟', 'duration_min'),
 
   /// 次数：可数。适合组数、页数。
-  count('次数', '次'),
+  count('次数', '次', 'count'),
 
   /// 事件：发生/未发生。配合 [DoseShape.threshold] 用。
-  episode('事件', '次'),
+  episode('事件', '次', 'episode'),
 
   /// 主观分：自报 0–10。只允许进 `experience` 维度。
-  rating('主观分', '分');
+  rating('主观分', '分', 'rating');
 
-  const MeasureKind(this.label, this.defaultUnit);
+  const MeasureKind(this.label, this.defaultUnit, this.wire);
 
   final String label;
   final String defaultUnit;
+
+  /// 协议里的名字（snake_case）。库与代码里用 [name]（camelCase），
+  /// **两套名字都要认**：协议是给人看的，枚举是给编译器看的。
+  /// 不认 wire 名会得到"AI 明明按模板回答却被判 R_UNKNOWN_MEASURE"——
+  /// v1.2.0 第一次出包就是这么红的（协议写 duration_min，枚举叫 durationMin）。
+  final String wire;
 
   /// 从单位猜量法。**只用于没问过用户的地方**（自建项目的默认口径）：
   /// 猜错只会让采集页问的问题不一样，不影响分数口径（形状默认 linear）。
@@ -39,8 +45,9 @@ enum MeasureKind {
   /// 未知值返回 null：不许静默回退成「时长」，那会把一次电影记成 0 分钟。
   static MeasureKind? tryParse(String? raw) {
     if (raw == null) return null;
+    final String key = raw.trim();
     for (final MeasureKind k in MeasureKind.values) {
-      if (k.name == raw) return k;
+      if (k.name == key || k.wire == key) return k;
     }
     return null;
   }

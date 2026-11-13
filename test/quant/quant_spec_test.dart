@@ -41,6 +41,28 @@ List<String> codesOf(QuantValidation v) =>
     v.issues.map((QuantIssue q) => q.code).toList();
 
 void main() {
+  group('量法的两套名字（协议 snake_case / 枚举 camelCase）', () {
+    test('tryParse 两种都认', () {
+      expect(MeasureKind.tryParse('duration_min'), MeasureKind.durationMin);
+      expect(MeasureKind.tryParse('durationMin'), MeasureKind.durationMin);
+      expect(MeasureKind.tryParse('count'), MeasureKind.count);
+      expect(MeasureKind.tryParse('episode'), MeasureKind.episode);
+      expect(MeasureKind.tryParse('rating'), MeasureKind.rating);
+    });
+
+    test('不认识的还是 null（不猜）', () {
+      expect(MeasureKind.tryParse('vibes'), isNull);
+      expect(MeasureKind.tryParse(''), isNull);
+    });
+
+    test('wire 名互不重复，且都不是空串', () {
+      final Set<String> wires =
+          MeasureKind.values.map((MeasureKind k) => k.wire).toSet();
+      expect(wires.length, MeasureKind.values.length);
+      expect(wires.contains(''), isFalse);
+    });
+  });
+
   group('能收的情况', () {
     test('时长 + 线性 + 单个能力维度', () {
       final QuantValidation v = validateQuantSpec(specOf(), registry: registry);
