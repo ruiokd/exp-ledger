@@ -231,37 +231,83 @@ class SettlementChartPainter extends CustomPainter {
     );
 
     // ---- x 轴日期 ----
-    _paintText(
-      canvas,
-      model.days.first.shortLabel,
-      Offset(_left, _top + plotH + 6),
-      const TextStyle(fontSize: Tokens.fontMicro, color: AppColors.inkFaint),
-    );
-    if (model.days.length > 4) {
-      final int mid = model.days.length ~/ 2;
-      _paintText(
-        canvas,
-        model.days[mid].shortLabel,
-        Offset(xFor(model.days[mid]) - 14, _top + plotH + 6),
-        const TextStyle(fontSize: Tokens.fontMicro, color: AppColors.inkFaint),
-      );
+    // 防重叠：首尾优先占用，中间那格只有真挤得下才画。
+    // 之前是硬画三个标签（first / mid / last），数据点稀疏时 mid 会贴在 first 上，
+    // 显示成「11/1011/13」这种糊在一起的字符串。
+    _paintAxisLabels(canvas, plot, plotW, plotH, xFor);
+  }
+
+  /// x 轴日期：首尾一定画，中间那格按剩余空间决定画不画。
+  ///
+  /// 三条规矩：
+  ///   1. 左端左对齐、右端右对齐，避免标签跑出绘图区；
+  ///   2. 任何两个标签之间至少留 [_axisLabelGap] 像素；
+  ///   3. 首尾是同一天（数据只有一格）时只画一个，不叠字。
+  void _paintAxisLabels(
+    Canvas canvas,
+    Rect plot,
+    double plotW,
+    double plotH,
+    double Function(DayKey day) xFor,
+  ) {
+    if (model.days.isEmpty) return;
+    final double y = _top + plotH + 6;
+    const TextStyle style =
+        TextStyle(fontSize: Tokens.fontMicro, color: AppColors.inkFaint);
+
+    double measure(String text) {
+      final TextPainter tp = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      return tp.width;
     }
-    if (model.hasForecast) {
-      _paintText(
-        canvas,
-        model.forecastDays.last.shortLabel,
-        Offset(_left + plotW - 26, _top + plotH + 6),
-        const TextStyle(fontSize: Tokens.fontMicro, color: AppColors.inkFaint),
-      );
-    } else {
-      _paintText(
-        canvas,
-        model.days.last.shortLabel,
-        Offset(_left + plotW - 26, _top + plotH + 6),
-        const TextStyle(fontSize: Tokens.fontMicro, color: AppColors.inkFaint),
-      );
+
+    void paintAt(String text, double left) {
+      final TextPainter tp = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(left, y));
+    }
+
+    final String firstLabel = model.days.first.shortLabel;
+    final String lastLabel = model.hasForecast
+        ? model.forecastDays.last.shortLabel
+        : model.days.last.shortLabel;
+
+    if (firstLabel == lastLabel) {
+      paintAt(firstLabel, _left);
+      return;
+    }
+
+    paintAt(firstLabel, _left);
+    final double leftOccupied =
+        _left + measure(firstLabel) + _axisLabelGap;
+
+    final double lastWidth = measure(lastLabel);
+    final double lastLeft = _left + plotW - lastWidth;
+    // 右端标签按右边界对齐；宁可压住最右边一点，也不要跑出画布。
+    if (lastLeft > leftOccupied) {
+      paintAt(lastLabel, lastLeft);
+    }
+
+    // 中间：空间够才画，不够就不画（不叠字优先于多一个信息点）。
+    if (model.days.length > 3) {
+      final int mid = model.days.length ~/ 2;
+      final String midLabel = model.days[mid].shortLabel;
+      if (midLabel != firstLabel && midLabel != lastLabel) {
+        final double width = measure(midLabel);
+        final double left = xFor(model.days[mid]) - width / 2;
+        final bool fitsLeft = left > leftOccupied;
+        final bool fitsRight = lastLeft - (left + width) > _axisLabelGap;
+        if (fitsLeft && fitsRight) paintAt(midLabel, left);
+      }
     }
   }
+
+  /// 两个 x 轴标签之间至少留这么多像素。
+  static const double _axisLabelGap = 10;
 
   void _fillDay(
     Canvas canvas,

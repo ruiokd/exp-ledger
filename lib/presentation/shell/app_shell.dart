@@ -191,6 +191,9 @@ class _AppShellState extends ConsumerState<AppShell> {
           ],
         ),
       ),
+      // 居中最下：右下角会压住页面正文（曲线页的免责声明就被它盖住过），
+      // 而且"记录一件事"是主操作，不该躲在一角。
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: _index == 4
           ? null
           : FloatingActionButton.extended(

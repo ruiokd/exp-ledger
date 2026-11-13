@@ -133,6 +133,17 @@ class _ChartPageState extends ConsumerState<ChartPage> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: Tokens.gapXS),
+                    // 一行"这次到底画了什么"：切区间时它立刻变，
+                    // 免得数据本身很少时看起来像"切了没反应"。
+                    Text(
+                      '近 $_rangeDays 天 · 有记录 ${model.days.length} 天'
+                      '${model.hasForecast ? ' · 预测到 ${model.forecastDays.last.shortLabel}' : ''}',
+                      style: const TextStyle(
+                        fontSize: Tokens.fontMicro,
+                        color: AppColors.inkFaint,
+                      ),
+                    ),
                     const SizedBox(height: Tokens.gapS),
                     _Legend(hasForecast: model.hasForecast),
                   ],
@@ -165,11 +176,21 @@ class _ChartPageState extends ConsumerState<ChartPage> {
       );
     }
 
-    final List<ForecastPoint> points = _mode.axis == null
+    // 预测点按所选区间截断：选 30 天就只说到 30 天。
+    // 之前一直用 90 天那一条，所以切区间时图变了、下面那行文字没变，
+    // 看起来像"没跟踪"。
+    final List<ForecastPoint> allPoints = _mode.axis == null
         ? const <ForecastPoint>[]
         : (data.forecast[_mode.axis!] ?? const <ForecastPoint>[])
             .where((ForecastPoint p) => p.isProjection)
             .toList();
+    final List<ForecastPoint> clampedPoints = allPoints
+        .where((ForecastPoint p) => p.day.diffDays(data.today) <= _rangeDays)
+        .toList();
+    // 截断后为空（区间很短、预测步长又大）时退回完整列表：
+    // 宁可说 90 天后，也不要变成"没有预测"。
+    final List<ForecastPoint> points =
+        clampedPoints.isEmpty ? allPoints : clampedPoints;
 
     final Set<DayKey> risk = <DayKey>{
       for (final LoadIndex l in data.loads)

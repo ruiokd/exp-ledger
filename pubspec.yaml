@@ -1,7 +1,7 @@
 name: exp_ledger
 description: "经验账本 — 把行为带来的突触变化画到一张长期图表上。"
 publish_to: "none"
-version: 1.1.1+5
+version: 1.1.2+6
 
 environment:
   sdk: ">=3.5.0 <4.0.0"

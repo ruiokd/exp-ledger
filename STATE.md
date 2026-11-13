@@ -30,6 +30,8 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   **APK 已产出**：`dist/exp-ledger-1.0.2.apk` / `/chat/outputs/` 同名副本，
   31.7 MB，sha256 `886f02af…5682a5`，CI run 43293073012 全绿（analyze 0 error/0 warning，
   数据层测试含新用例通过）
+- 第 10 步 ✅ **v1.1.2 UI 修正**：x 轴标签防重叠 / 预测按区间截断 / 区间信息行 /
+  FAB 居中 / 通知图标 keep.xml + 通知初始化全降级。详见六之十。版本 `1.1.2+6`
 - 第 9 步 ✅ **运行日志（v1.1.1）**：环形缓冲 + 落盘 + 全局钩子 + 日志页 + 启动失败页入口
   设计见六之九；`test/core/app_log_test.dart` 9 个用例；版本 `1.1.1+5`
   **APK 已产出**：`dist/exp-ledger-1.1.1.apk` 与 `/chat/outputs/` 同名副本，32 MB，
@@ -425,6 +427,22 @@ test/core/app_log_test.dart    9 个用例（容量、筛选、截断、钩子�
 - **上次运行的日志会 seed 回内存**（tag=`last`，取末 120 行），所以重启后仍然看得到崩前的结尾。
 - 打点位置：`main`（启动/开库/补算/提醒/首帧）、`CaptureRepository.commit`（动作+行为码+是否重算）、
   `AnchorRepository.declareImpact`（含被拒的 code）与 `recordEvidence`（种类+置信度）。
+
+## 六之十、v1.1.2 修的三处 UI + 通知图标（改之前先读）
+
+用户报的问题 + 日志定位到的根因，逐条对应：
+
+| 现象 | 根因 | 修法 |
+|---|---|---|
+| 27 条 `PlatformException(invalid_icon)` | release APK 里 `ic_notification` **被资源收缩删掉了**：它只在 Dart 字符串里出现，R8 看不到引用。`getIdentifier` 返回 0 | `res/raw/keep.xml`（`tools:keep`）+ `NotificationService.init` 全 try/catch + `_initFailed` 标记（失败只重试一次，不再刷屏） |
+| x 轴日期叠成一坨 | painter 硬画 first/mid/last 三个标签，数据点稀疏时 mid 贴在 first 上 | `_paintAxisLabels`：量宽度、首尾优先、中间按剩余空间决定（间距 < 10px 就不画）；首尾同日只画一个 |
+| 切区间"下面没跟踪" | 摘要与预测线永远用 90 天那条 `forecast`，与所选区间无关 | 预测点按 `_rangeDays` 截断（截空则退回完整列表）；图下加一行「近 N 天 · 有记录 X 天 · 预测到 M/d」 |
+| FAB「记录一件事」太偏 | 默认右下角，压住正文（曲线页免责声明被盖） | `FloatingActionButtonLocation.centerFloat` |
+
+- **通知是增强功能**：`init` 失败、`requestPermission` 失败、`scheduleDaily` 失败全部只记 warn 不抛。
+  用户点"开启提醒"绝不能因为一个图标资源而崩。
+- **`res/raw/keep.xml` 不能删**：删了通知图标会再次被收缩掉。打包工具看不到 Dart 字符串里的资源引用，
+  这是 Android 资源收缩的经典坑，不是 Flutter 特例。
 
 ## 七之六、既有红测试：6 个（2026-11-13 首跑全量才暴露）
 

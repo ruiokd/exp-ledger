@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  资源收缩白名单。
+
+  `ic_notification` 只在 Dart 代码里以字符串出现（AndroidInitializationSettings
+  ('ic_notification')），R8 的资源收缩器看不到这个引用，于是把它从 release APK
+  里删掉了 —— 运行时 ctx.getResources().getIdentifier(...) 返回 0，
+  flutter_local_notifications 直接抛 PlatformException(invalid_icon)。
+
+  tools:keep 让打包工具保留它。删掉这个文件 = 通知图标又消失。
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_notification,@drawable/widget_bg,@layout/ledger_widget" />
