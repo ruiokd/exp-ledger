@@ -93,7 +93,7 @@ class _Row extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final String shape = spec?.shape.label ?? DoseShape.linear.label;
+    final String shape = spec?.shape.kind.label ?? DoseShape.linear.label;
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
