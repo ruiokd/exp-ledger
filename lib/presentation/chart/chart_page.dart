@@ -133,7 +133,7 @@ class _ChartPageState extends ConsumerState<ChartPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: Tokens.gapXS),
+                    const SizedBox(height: Tokens.gapXs),
                     // 一行"这次到底画了什么"：切区间时它立刻变，
                     // 免得数据本身很少时看起来像"切了没反应"。
                     Text(
