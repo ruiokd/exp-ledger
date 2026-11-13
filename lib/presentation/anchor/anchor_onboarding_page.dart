@@ -390,8 +390,10 @@ class _AnchorOnboardingPageState extends ConsumerState<AnchorOnboardingPage> {
   }
 
   ImpactTier? _prevTier() {
-    if (_state.cursor == 0) return null;
-    final OnboardingSelection? prev =
+    if (_state.cursor <= 0) return null;
+    // 列表元素本身非空，所以这里用非空类型——写 `OnboardingSelection?`
+    // 会让下一行的 `.behaviorId` 报 unchecked_use_of_nullable_value。
+    final OnboardingSelection prev =
         _state.selections[_state.cursor - 1];
     return _state.impacts[prev.behaviorId]?.tier;
   }

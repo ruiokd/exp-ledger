@@ -285,7 +285,7 @@ void main() {
     test('withOverrides 改不动封顶语义', () {
       final AnchorConfig tuned =
           config.withOverrides(<String, double>{'tierMediumPrior': 0.9});
-      final double w = const AnchorEngine(tuned).priorWeightFor(
+      final double w = AnchorEngine(tuned).priorWeightFor(
         tier: ImpactTier.medium,
         source: ImpactSource.userPrior,
       );
