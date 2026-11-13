@@ -11,6 +11,7 @@ import 'package:exp_ledger/domain/models/custom_behavior.dart';
 import 'package:exp_ledger/presentation/anchor/anchor_catalog.dart';
 import 'package:exp_ledger/presentation/anchor/anchor_onboarding_page.dart';
 import 'package:exp_ledger/presentation/anchor/anchor_proposal_page.dart';
+import 'package:exp_ledger/presentation/anchor/custom_behavior_page.dart';
 import 'package:exp_ledger/presentation/anchor/new_behavior_page.dart';
 import 'package:exp_ledger/presentation/anchor/anchor_tier_bar.dart';
 import 'package:exp_ledger/presentation/providers.dart';
@@ -288,6 +289,27 @@ class AnchorPage extends ConsumerWidget {
               }
             },
             child: const Text('内置库里没有？新建一个项目'),
+          ),
+        ),
+        const SizedBox(height: Tokens.gapS),
+        SizedBox(
+          height: 46,
+          width: double.infinity,
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.ink,
+              side: const BorderSide(color: AppColors.divider),
+            ),
+            onPressed: () async {
+              await Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => const CustomBehaviorPage(),
+                ),
+              );
+              ref.invalidate(anchorCardsProvider);
+              ref.invalidate(customBehaviorsProvider);
+            },
+            child: const Text('管理自建项目（改名 / 改口径 / 删除）'),
           ),
         ),
       ],

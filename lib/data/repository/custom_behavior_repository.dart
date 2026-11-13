@@ -65,6 +65,109 @@ class CustomBehaviorRepository {
     logInfo('custom', '删除自建项目 $code');
   }
 
+  /// 改一个已建项目：名字 / 描述 / 目标量 / 单位 / 折算方式。
+  ///
+  /// 三件事必须同事务（否则会出现"项目改了但口径还是旧的"）：
+  ///   1. `custom_behavior.target_dose`；
+  ///   2. `behavior_quant_spec.target_dose`（折算分母）；
+  ///   3. 折算形状本身。
+  /// 第 1 与第 2 两条是**两个真源**，必须一起改——STATE 七里专门记过这条。
+  ///
+  /// 找不到就返回 null（不抛：编辑页可能开着旧列表）。
+  Future<CustomBehaviorRecord?> update({
+    required String code,
+    String? name,
+    String? description,
+    double? targetDose,
+    String? doseUnit,
+    QuantSpec? quant,
+    DateTime? at,
+  }) async {
+    final CustomBehaviorRecord? existing = await _dao.byCode(_db, code);
+    if (existing == null) return null;
+
+    final DateTime now = at ?? DateTime.now();
+    final double target =
+        (targetDose == null || targetDose <= 0) ? existing.targetDose : targetDose;
+    final String unit = (doseUnit == null || doseUnit.trim().isEmpty)
+        ? existing.doseUnit
+        : doseUnit.trim();
+
+    final String? trimmedName = name?.trim();
+    final String? trimmedDesc = description?.trim();
+    final CustomBehaviorRecord next = existing.copyWith(
+      name: (trimmedName == null || trimmedName.isEmpty) ? null : trimmedName,
+      description: trimmedDesc,
+      targetDose: target,
+      doseUnit: unit,
+    );
+
+    final QuantSpec spec = await _resolvedSpec(
+      existing: existing,
+      target: target,
+      unit: unit,
+      incoming: quant,
+    );
+
+    // 只改了名字就不碰口径：否则改个错别字也会把 revision 顶上去，
+    // 「改过几次口径」这句话就查不清了。
+    final bool quantTouched = quant != null ||
+        target != existing.targetDose ||
+        unit != existing.doseUnit;
+
+    await _db.transaction<void>((Transaction txn) async {
+      await _dao.upsert(txn, next, now: now);
+      if (quantTouched) {
+        await _quant.upsertSpec(txn, spec, now: now);
+      }
+    });
+
+    logInfo(
+      'custom',
+      '编辑项目',
+      detail: 'code=$code shape=${spec.shape.kind.name} '
+          'target=$target$unit',
+    );
+    return next;
+  }
+
+  /// 决定这条项目最终用哪个口径。
+  ///
+  /// 顺序：调用方给的新口径（要过闸）→ 库里已有的口径（rebase 到新目标量）
+  /// → linear 基线。任何一步失败都退回上一层，绝不让坏口径落库。
+  Future<QuantSpec> _resolvedSpec({
+    required CustomBehaviorRecord existing,
+    required double target,
+    required String unit,
+    QuantSpec? incoming,
+  }) async {
+    if (incoming != null) {
+      final AxisRegistry registry = AxisRegistry(await _quant.axes(_db));
+      final QuantSpec rebased = incoming.forBehavior(
+        existing.code,
+        targetDose: target,
+        measureUnit: unit,
+      );
+      final QuantValidation verdict =
+          validateQuantSpec(rebased, registry: registry);
+      if (verdict.accepted) return verdict.spec;
+      logWarn(
+        'custom',
+        '口径不合格，保留旧口径',
+        detail: 'code=${existing.code} '
+            'codes=${verdict.rejects.map((QuantIssue q) => q.code).join(",")}',
+      );
+    }
+
+    final QuantSpec? stored = await _quant.specByCode(_db, existing.code);
+    final QuantSpec base = stored ?? linearBaselineFor(existing);
+    return base.forBehavior(
+      existing.code,
+      targetDose: target,
+      measureUnit: unit,
+    );
+  }
+
   /// 建一个新项目。返回它，[BehaviorDef] 由 `customBehaviorDef()` 生成。
   Future<CustomBehaviorRecord> create({
     required String name,

@@ -30,6 +30,9 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   **APK 已产出**：`dist/exp-ledger-1.0.2.apk` / `/chat/outputs/` 同名副本，
   31.7 MB，sha256 `886f02af…5682a5`，CI run 43293073012 全绿（analyze 0 error/0 warning，
   数据层测试含新用例通过）
+- 第 13 步 ✅ **自建项目管理（v1.2.1）**：编辑 / 删除 UI + `update()` 同事务改
+  两个真源（`custom_behavior.target_dose` 与 `behavior_quant_spec.target_dose`）。
+  入口：刻度标定页 →「管理自建项目」。版本 `1.2.1+10`，细节见六之十四。
 - 第 12 步 ✅ **日志纪律（v1.1.4）**：不记用户自由文本；上次运行单独分节，
   `errorCount` 只数本次；日志页加「含上次运行」开关。详见六之十三。版本 `1.1.4+8`
   **APK 已产出**：`dist/exp-ledger-1.1.4.apk` 与 `/chat/outputs/` 同名副本，33 MB，
@@ -654,8 +657,23 @@ repository.create()    可选 quant 参数；**先校验再写**，k=0.37 这种
   新建时让人填 k 是拿准确性换不必要的复杂度。
 - 新增测试：`test/quant/custom_behavior_quant_test.dart`（11）+ 仓储测试里 3 条
   （改口径后 derive 从 0.5 变 0.631、手选事件型落库、自由参数退回线性）。
-- **还没做的**：维度注册表接管 `ProjectAxis.values`（v1.2.1）、体验曲线与主图维度选择器
-  （v1.2.2）、口径的独立编辑页（现在只能建项目时选一次）。
+**v1.2.1：项目能改了（旧账 ② 结清）**
+
+```
+repository.update()      同事务改 custom_behavior + behavior_quant_spec；
+                         `_resolvedSpec` 三级回退：新口径（过闸）→ 库里旧口径（rebase 到新目标量）→ linear 基线
+presentation/anchor/custom_behavior_page.dart  列表 + 编辑（名字/目标量/单位/折算方式）+ 删除
+anchor_page              「管理自建项目」入口
+```
+
+- **只改名字不碰口径**：`quantTouched` 判断，避免改错别字也把 revision 顶上去
+  （「改过几次口径」要查得清）。
+- **编辑保留原维度归属**：`_EditSheet` 沿用 `spec.impact`，不顺手把"算哪个维度"改成内置默认。
+- **行为码永不改**：改名只改 name/description，改 code 就等于丢历史（幂等键里有它）。
+- 测试：`test/data/custom_behavior_update_test.dart` 7 条（两真源同步、只改名、
+  空名不改、坏参数保留旧口径、不存在返回 null、revision 递增）。
+- **还没做的**：维度注册表接管 `ProjectAxis.values`（v1.2.2）、体验曲线与主图维度选择器
+  （v1.2.3）。
 - **v5 迁移还没在真机上跑过**（沙箱只有 ffi）。下次装机第一件事：
   能进首页 = 迁移通过；若停在启动失败页且阶段是「迁移」，把原文回传——
   v5 只跑两条 CREATE + 一条 CREATE INDEX，全部 IF NOT EXISTS，最可能的失败是
@@ -753,7 +771,7 @@ CI 一直只跑 `flutter test test/data/`，所以 `test/engine` 与 `test/captu
 > 已知欠账（按建议顺序）：
 > ① 既有 6 个红测试（STATE 七之六有期望/实际/初判三栏）——先判"代码对还是测试期望对"，
 >    不许为了让 CI 变绿去改期望值；
-> ② 自建项目还不能编辑/删除（Repository 有 `remove()`，UI 没接）；
+> ② ✅ 已结清（v1.2.1）：自建项目可编辑/删除，`update()` 同事务改两个真源；
 > ③ 饮食采集入口没做，`EnergyLedger.intakeKcal` 恒为 0；
 > ④ `PRAGMA foreign_keys = ON` 没开（要先审删除顺序，配 DeletingOrder 测试）；
 > ⑤ 刻度图（AnchorTierBar）只在刻度页用，明细页还没显示"这条是先验"。
