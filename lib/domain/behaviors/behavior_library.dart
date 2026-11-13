@@ -49,6 +49,23 @@ class BehaviorLibrary {
     }
   }
 
+  /// 原地替换（同名 code 用新定义覆盖，不重建列表）。
+  ///
+  /// `register` 会跳过已存在的 code，这对"新建项目"是对的（不用重复注册），
+  /// 但对"口径改了"是错的：行为码没变、定义变了，必须换掉。
+  /// 自建项目的量化口径正好是后者（linear → 对数/饱和/事件型）。
+  void replace(List<BehaviorDef> defs) {
+    for (final BehaviorDef b in defs) {
+      final int i = all.indexWhere((BehaviorDef e) => e.code == b.code);
+      if (i >= 0) {
+        all[i] = b;
+      } else {
+        all.add(b);
+      }
+      _byCode[b.code] = b;
+    }
+  }
+
   BehaviorDef? byCode(String code) => _byCode[code];
 
   BehaviorDef require(String code) {

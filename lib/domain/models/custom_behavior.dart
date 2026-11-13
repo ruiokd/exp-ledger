@@ -6,15 +6,17 @@
 ///   2. **刻度**（`user_anchor` / `declared_impact`）：你定的单位与量级；
 ///   3. **记录**（`daily_log`）：照旧走 `CaptureRepository.commit`。
 ///
-/// 量化路径和内置行为完全一致：`doseFraction = 实际量 / 目标量` →
+/// 量化路径和内置行为完全一致：`doseFraction = 口径折算(实际量)` →
 /// `baseScoreFor()` → EXP = 分 × 权重 × 状态 × 置信 × EXP/点。
 /// **这一层不自己算 EXP**，否则两个算法并存必然漂移。
+///
+/// 「口径折算」从 v1.2.0 起由 `domain/quant` 的 [QuantSpec] 决定：
+/// 线性时就是 `实际量 / 目标量`（与 v1.1.x 逐字等价），
+/// 换成对数/饱和/事件型之后，变化只发生在"没做满算几成"这一段。
 library;
 
 import '../anchor/anchor_models.dart';
 import '../enums.dart';
-import 'behavior_def.dart';
-import 'capture_question.dart';
 import 'project_axis.dart';
 
 class CustomBehaviorRecord {
@@ -136,91 +138,3 @@ class CustomBehaviorRecord {
 /// 生成稳定代码。中文名没法做 slug，用时间戳——写库后不再变。
 String customBehaviorCode([DateTime? at]) =>
     'custom_${(at ?? DateTime.now()).millisecondsSinceEpoch}';
-
-/// 把一条自建项目变成采集/结算流程认识的行为。
-///
-/// 只给一道题（这次做了多少），因为自建项目的语义就这么多：
-/// 「按我定的单位，今天做了多少」。多想一步就是替用户定义他的生活。
-BehaviorDef customBehaviorDef(CustomBehaviorRecord r) {
-  final bool negative = r.category == BehaviorCategory.negative;
-  final double target = r.targetDose <= 0 ? 1 : r.targetDose;
-  final double maxDose = target * 3;
-
-  return BehaviorDef(
-    code: r.code,
-    name: r.name,
-    category: r.category,
-    valence: negative ? Valence.negative : Valence.positive,
-    axis: r.axis,
-    iconName: 'dot',
-    aliases: <String>[
-      r.name,
-      if (r.description.trim().isNotEmpty) r.description.trim(),
-    ],
-    keywords: <String>[r.unitLabel, r.doseUnit],
-    standardDefinition: r.definitionText.trim().isEmpty
-        ? '一次 = ${r.unitLabel}'
-        : r.definitionText.trim(),
-    misconception: '这是你自己建的项目：量化按你定的单位与目标量走，不套内置公式。',
-    targetDose: target,
-    doseUnit: r.doseUnit,
-    slotScope: SlotScope.perDay,
-    questions: <QuestionSpec>[
-      QuestionSpec(
-        id: 'dose',
-        title: '这次${r.doseUnit}多少？',
-        why: '用你定的单位。不满也照实记——按比例算，不按"没做完"算。',
-        kind: QuestionKind.number,
-        inheritFromLast: true,
-        rangeHint: '一次通常 ${_fmt(target)}${r.doseUnit}',
-        numberSpec: NumberSpec(
-          min: 0,
-          max: maxDose,
-          initial: target,
-          step: 1,
-          unit: r.doseUnit,
-        ),
-      ),
-    ],
-    derive: (DeriveContext ctx) {
-      final double dose = ctx.numOr('dose', target);
-      double fraction = dose / target;
-      if (fraction < 0) fraction = 0;
-      if (fraction > 1.5) fraction = 1.5;
-      final bool full = fraction >= 0.999;
-      return DerivedResult(
-        slotKey: 'main',
-        interpretation: full
-            ? '${r.name}：${_fmt(dose)}${r.doseUnit}（目标 ${_fmt(target)}${r.doseUnit}）'
-            : '${r.name}：${_fmt(dose)}${r.doseUnit}，是目标 ${_fmt(target)}${r.doseUnit} 的 '
-                '${(fraction * 100).round()}%',
-        lines: <ReceiptLine>[
-          ReceiptLine('做了一次', '${_fmt(dose)}${r.doseUnit}'),
-          ReceiptLine('目标量', '${_fmt(target)}${r.doseUnit}'),
-          ReceiptLine(
-            '计入比例',
-            '${(fraction * 100).round()}%',
-            emphasis: true,
-          ),
-          ReceiptLine('刻度档位', '${r.tier.label}（先验，未实测）'),
-        ],
-        metrics: <String, double>{
-          'dose': dose,
-          'target_dose': target,
-          'fraction': fraction,
-        },
-        normalized: <String, Object?>{
-          'dose': dose,
-          'target_dose': target,
-          'tier': r.tier.name,
-          'custom': true,
-        },
-        confidence: ctx.confidenceCeiling,
-        doseFraction: fraction,
-      );
-    },
-  );
-}
-
-String _fmt(double v) =>
-    v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);

@@ -63,6 +63,8 @@ def main() -> int:
         "user_anchor", "anchor_revision", "declared_impact", "anchor_evidence",
         # 第 11 步：自建项目
         "custom_behavior",
+        # v1.2.0：量化形状层（纯增量，17 张老表一条未改）
+        "behavior_quant_spec", "axis_definition",
     }
     missing = expected_tables - tables
     if missing:
@@ -81,6 +83,7 @@ def main() -> int:
         "ix_history_key", "ix_memory_due", "ix_forecast_day",
         "ix_anchor_revision_time", "ix_anchor_evidence_behavior",
         "ix_custom_behavior_enabled",
+        "ix_axis_definition_kind",
     ):
         if name not in indexes:
             print(f"  ✗ 缺索引：{name}")
@@ -184,6 +187,88 @@ def main() -> int:
     ).fetchone()
     assert row == ("mediumHigh", "ev-1"), row
     print("  ✓ 先验被实测覆盖（replaced_by 指向证据）")
+
+    # ---- 量化形状层：CHECK 是库层的硬约束，不是文档 ----
+    spec_cols = (
+        "behavior_code, measure_kind, measure_unit, shape_kind, shape_k,"
+        " shape_theta_fraction, target_dose, impact_json, citation, source,"
+        " note, revision, created_at, updated_at"
+    )
+
+    def quant_row(code: str, shape: str, target: float):
+        return {
+            "behavior_code": code, "measure_kind": "episode",
+            "measure_unit": "次", "shape_kind": shape, "shape_k": None,
+            "shape_theta_fraction": 1.0, "target_dose": target,
+            "impact_json": '[{"axis":"relation","axis_label":"关系",'
+                           '"dim_kind":"experience","share":1.0}]',
+            "citation": "事件型行为按发生/未发生二值计", "source": "userPrior",
+            "note": "", "revision": 1,
+            "created_at": "2026-03-01T20:00:00",
+            "updated_at": "2026-03-01T20:00:00",
+        }
+
+    def insert_quant(row: dict):
+        cols = ", ".join(row)
+        marks = ", ".join("?" * len(row))
+        con.execute(
+            f"INSERT INTO behavior_quant_spec ({cols}) VALUES ({marks})",
+            list(row.values()),
+        )
+
+    insert_quant(quant_row("custom_film", "threshold", 1.0))
+    expect_error(
+        "target_dose = 0 的口径",
+        lambda: insert_quant(quant_row("bad_zero", "linear", 0.0)),
+    )
+    expect_error(
+        "白名单之外的 shape_kind",
+        lambda: insert_quant(quant_row("bad_shape", "biphasic", 1.0)),
+    )
+    # 一个行为一条口径：主键覆盖而不是新增
+    row = quant_row("custom_film", "saturating", 90.0)
+    row["measure_kind"] = "duration_min"
+    cols = ", ".join(row)
+    marks = ", ".join("?" * len(row))
+    con.execute(
+        f"INSERT OR REPLACE INTO behavior_quant_spec ({cols}) VALUES ({marks})",
+        list(row.values()),
+    )
+    n = con.execute("SELECT COUNT(*) FROM behavior_quant_spec").fetchone()[0]
+    assert n == 1, f"同一行为应只有一条口径，实际 {n}"
+    shape = con.execute(
+        "SELECT shape_kind FROM behavior_quant_spec WHERE behavior_code = ?",
+        ("custom_film",),
+    ).fetchone()[0]
+    assert shape == "saturating", shape
+    print("  \u2713 一个行为一条口径（behavior_code 主键覆盖）")
+
+    # 自定义维度：ability 必须带衰减常数
+    con.execute(
+        "INSERT INTO axis_definition (axis_key, label, dim_kind, decay_tau_days,"
+        " decay_citation, enabled, created_at, updated_at)"
+        " VALUES (?,?,?,?,?,?,?,?)",
+        ("ua_1", "关系", "experience", 0.0, "", 1,
+         "2026-03-01T20:00:00", "2026-03-01T20:00:00"),
+    )
+    expect_error(
+        "ability 维度没有衰减常数",
+        lambda: con.execute(
+            "INSERT INTO axis_definition (axis_key, label, dim_kind,"
+            " decay_tau_days, decay_citation, enabled,"
+            " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            ("ua_bad", "关系", "ability", 0.0, "", 1,
+             "2026-03-01T20:00:00", "2026-03-01T20:00:00"),
+        ),
+    )
+    con.execute(
+        "INSERT INTO axis_definition (axis_key, label, dim_kind, decay_tau_days,"
+        " decay_citation, enabled, created_at, updated_at)"
+        " VALUES (?,?,?,?,?,?,?,?)",
+        ("ua_2", "关系", "ability", 45.0, "去训练经验近似", 1,
+         "2026-03-01T20:00:00", "2026-03-01T20:00:00"),
+    )
+    print("  \u2713 ability 维度必须带衰减常数（CHECK 生效）")
 
     # ---- 各表列数（防止建表语句被截断） ----
     print("\n表 / 列数：")

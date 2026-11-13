@@ -129,6 +129,61 @@ else
   ok "anchor 层没有碰 daily_log"
 fi
 
+echo "== 4e. 量化形状层（quant）的边界守卫 =="
+# 这一层同样是后加插件。它管的是「这次做了多少怎么折算」，
+# 一旦被结算层 import，口径就会顺着计算链爬进历史 EXP（同一个坑，第二遍）。
+#   - quant 层只许依赖 dart: 与 domain 内部（纯函数，可脱机测）
+#   - 结算/算法/采集/预测不许 import 它（接线只允许走 lib/domain/models）
+#   - 它自己不许算 EXP（分只能由 baseScoreFor 那一条路算）
+#   - 它不许认识 anchor（两个插件互不依赖）
+QUANT_LAYER_LEAK=$(grep -rn --include='*.dart' -E "package:(flutter|sqflite|share_plus)|exp_ledger/(data|presentation|services)" lib/domain/quant/ 2>/dev/null)
+if [ -n "$QUANT_LAYER_LEAK" ]; then
+  bad "quant 层引入了不该有的依赖（必须保持零 Flutter / 零 data 依赖）："
+  printf '%s\n' "$QUANT_LAYER_LEAK"
+else
+  ok "quant 层只依赖 dart: 与 domain"
+fi
+QUANT_REVERSE_DEP=$(grep -rn --include='*.dart' "domain/quant" lib/domain/engine lib/domain/settlement lib/domain/science lib/domain/behaviors lib/domain/capture lib/domain/forecast 2>/dev/null)
+if [ -n "$QUANT_REVERSE_DEP" ]; then
+  bad "结算/算法层反向依赖了 quant（量化口径会污染历史 EXP）："
+  printf '%s\n' "$QUANT_REVERSE_DEP"
+else
+  ok "结算/算法层没有反向依赖 quant（接线只走 domain/models）"
+fi
+QUANT_COMPUTES_EXP=$(grep -rn --include='*.dart' -E "expPerPoint|applyExp|totalExp|SettlementPipeline" lib/domain/quant/ 2>/dev/null | grep -vE ':[0-9]+:[[:space:]]*//')
+if [ -n "$QUANT_COMPUTES_EXP" ]; then
+  bad "quant 层在算 EXP（分只能由 baseScoreFor 那一条路算）："
+  printf '%s\n' "$QUANT_COMPUTES_EXP"
+else
+  ok "quant 层没有算 EXP"
+fi
+QUANT_TOUCHES_ANCHOR=$(grep -rn --include='*.dart' "domain/anchor" lib/domain/quant/ 2>/dev/null)
+if [ -n "$QUANT_TOUCHES_ANCHOR" ]; then
+  bad "quant 层依赖了 anchor（两个插件必须互不认识）："
+  printf '%s\n' "$QUANT_TOUCHES_ANCHOR"
+else
+  ok "quant 与 anchor 互不依赖"
+fi
+
+echo "== 4f. quant 层公开 API 清单（切文件时防止整段丢失） =="
+# 起因：把 400 行的 quant_codec.dart 切成 request/response 时，有一个函数与一个类
+# 正好落在两段的接缝上，parse/check_symbols 都不报错（它们只查语法与类型 import），
+# 只有测试编译才会炸。这条检查把"该有的声明"列成清单，缺一个就红。
+QUANT_API_MISSING=""
+for sym in DoseShape DoseShapeSpec ShapeVerdict MeasureKind ImpactShare \
+           QuantSpec QuantIssue QuantValidation AxisKind AxisSpec AxisRegistry \
+           QuantRequestTarget QuantDecodeResult buildQuantRequestText \
+           decodeQuantResponse validateQuantSpec extractJson; do
+  if ! grep -rqE "^(final |const )?(class|enum) ${sym}\b|^[A-Za-z_][A-Za-z0-9_<>, ?]* ${sym}\(" lib/domain/quant/ 2>/dev/null; then
+    QUANT_API_MISSING="$QUANT_API_MISSING $sym"
+  fi
+done
+if [ -n "$QUANT_API_MISSING" ]; then
+  bad "quant 层缺了这些声明（切文件时丢了？）：$QUANT_API_MISSING"
+else
+  ok "quant 层公开 API 齐全（17 个声明）"
+fi
+
 echo "== 5. 依赖清单 =="
 note "flutter_riverpod ^2.5.1 / sqflite ^2.3.3 / flutter_local_notifications ^17.2.1"
 note "share_plus ^9.0.0 / timezone ^0.9.2 / path_provider ^2.1.3 / fl_chart ^0.68.0"

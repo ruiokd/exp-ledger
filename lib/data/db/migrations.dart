@@ -13,7 +13,7 @@ class Migrations {
   const Migrations._();
 
   /// 当前 schema 版本。加迁移时 +1。
-  static const int version = 4;
+  static const int version = 5;
 
   /// 全新库：按 [kCreateStatements] 逐条建。
   static Future<void> createAll(Database db) async {
@@ -45,6 +45,14 @@ class Migrations {
     // v3 → v4：自建项目表（内置行为库之外的那些）。
     if (from < 4) {
       for (final String statement in kCustomBehaviorTables) {
+        await db.execute(statement);
+      }
+    }
+    // v4 → v5：量化形状层两张表（behavior_quant_spec / axis_definition）。
+    // 纯增量：17 张老表一条未改，`custom_behavior` 也没加列。
+    // 全部 IF NOT EXISTS，重复升级不炸；CHECK 约束由库自己守。
+    if (from < 5) {
+      for (final String statement in kQuantTables) {
         await db.execute(statement);
       }
     }

@@ -16,6 +16,7 @@ import 'package:exp_ledger/domain/models/day_settlement.dart';
 import 'package:exp_ledger/domain/models/draft_entry.dart';
 import 'package:exp_ledger/domain/models/load_index.dart';
 import 'package:exp_ledger/domain/models/project_axis.dart';
+import 'package:exp_ledger/domain/quant/quant.dart';
 import 'package:exp_ledger/domain/models/user_profile.dart';
 import 'package:exp_ledger/services/export_service.dart';
 import 'package:exp_ledger/services/notification_service.dart';
@@ -385,4 +386,18 @@ final Provider<CustomBehaviorRepository> customBehaviorRepositoryProvider =
 final FutureProvider<List<CustomBehaviorRecord>> customBehaviorsProvider =
     FutureProvider<List<CustomBehaviorRecord>>(
   (ref) => ref.watch(customBehaviorRepositoryProvider).list(),
+);
+
+// ---------------------------------------------------------------- 量化形状层
+
+final Provider<QuantRepository> quantRepositoryProvider =
+    Provider<QuantRepository>(
+  (ref) => QuantRepository(database: ref.watch(appDatabaseProvider)),
+);
+
+/// 每条自建项目的量化口径（没有行的不出现在这里 → 调用方退回线性）。
+/// 写入后 `ref.invalidate(customQuantSpecsProvider)` 即可刷新。
+final FutureProvider<Map<String, QuantSpec>> customQuantSpecsProvider =
+    FutureProvider<Map<String, QuantSpec>>(
+  (ref) => ref.watch(quantRepositoryProvider).specs(),
 );

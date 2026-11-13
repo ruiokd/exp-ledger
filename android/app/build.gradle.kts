@@ -39,8 +39,8 @@ android {
         applicationId = "com.yg.ledger"
         minSdk = 23
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.1.4"
+        versionCode = 9
+        versionName = "1.2.0"
     }
 
     buildTypes {

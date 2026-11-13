@@ -69,7 +69,7 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
 
 ## 三、当前规模
 
-122 个 Dart 文件（lib）/ 约 24.4k 行；14 个测试文件 / 3.1k 行。
+130 个 Dart 文件（lib）/ 约 25k 行；17 个测试文件 / 3.6k 行（含本轮 quant 2 文件）。
 第 8 步新增：domain 6 文件 2.75k 行 + 数据层 2 文件 491 行 + UI 5 文件 1.5k 行 + 测试 4 文件。
 数据层原 32 文件 / 4.4k 行；UI 原 17 文件 / 5.8k 行；Android 平台层 14 文件。
 
@@ -514,6 +514,138 @@ lib/presentation/anchor/new_behavior_page.dart       三步：说清 → AI 具�
    起因：日志导出的前半截全是上次的碎片，时间戳被压成"现在"，
    128 条里 119 条是 `[last]`，真正有用的本次时间线被埋了。
 
+## 六之十四、量化形状（Quant Layer）· 第一刀已落，设计见 `QUANT-PLUGIN.md`
+
+**问题**：自建项目能建了，但影响一律走 `实际量 / 目标量` 这条直线，
+且只能挂在 5 个内置维度之一。「一次看电影」和「一次刷题」同一条曲线；
+「陪伴」被迫记成 `discipline`。用户问的是：能不能让 AI 顺便给出**量化方式**，
+并在 App 里长出**新的维度与曲线**。
+
+**结论**：能，但要拆成三件不同的事，各有各的容器：
+
+| 层 | 内容 | 状态 |
+|---|---|---|
+| 量化形状 | 四种形状（linear / log / saturating / threshold），**归一化到「目标量 = 1.0」** | v1.2.0 第一刀已写 |
+| 自建维度 | `ability`（进主曲线，必须有衰减依据）/ `experience`（只记频次与主观分，EXP 恒 0） | v1.2.1 |
+| 体验曲线 | 周频次 + 主观分均值与误差带，**不进主曲线** | v1.2.2 |
+
+- **形状不另起一套公式**：它只决定 `doseFraction` 的映射，`baseScoreFor` /
+  质量加成 / 效率加成 / 状态乘数 / 置信权重一个字不改。目标量处恒为 1，
+  所以满分线不随形状漂。
+- **尺度不变是硬约束**：对数支的 `k` 无色纲，作用在 `d/T` 上。
+  写成 `ln(1+k·d)/ln(1+k·T)` 时 `d=T` 也是 1，但目标量 40 做一半得 0.82、
+  目标量 1 得 0.585 —— 用户改个目标量就悄悄换了形状。已修，测试守着
+  （同比例 × 4 种量级结果必须一致）。
+- **AI 只选形状 + 档位参数**：`k ∈ {0.5,1,2,4}`、`θ ∈ {T, 0.5T}`，其余整条打回
+  （`R_FREE_PARAM`）。不让 AI 输出公式或裸系数，是这一层可核对性的全部来源。
+- **`biphasic` 故意不做**：负向已有独立 category + `negativeCurve`，
+  一个形状同时产出正负会破「负向不乘状态乘数」。
+- **新维度落库不需要 DDL**：`ability_snapshot.abilities_json` 是 JSON map、
+  `forecast_point.axis` 是 TEXT。真正卡住的是代码里 8 处
+  `for (final axis in ProjectAxis.values)`。
+- **轴权重仍是系数不是数据**：用户轴权重进 `BalanceConfig.axisWeightOf(String)`，
+  走 `configOverride` 覆盖；写进表里会绕过重算通道，破铁律 5。
+- **`ProjectAxis.parse` 的静默回退是现存 bug**：未知轴一律变 `strength`，
+  一旦有自定义轴，会把「陪伴」记进体能且不报错。v1.2.1 改 `tryParse` + `unknown` 轴。
+- **多轴分摊（一条记录拆多条事件）首版不做**：`valence_event` 唯一约束
+  `(day_key, behavior_code, slot_key)` 要么改（红线）、要么给 `slot_key` 加轴后缀
+  （重算与归因全要重审）。首版只支持「一个主维度 + 若干体验维度」。
+
+**数据层已接（v1.2.0 第二步，schema 5）**：
+
+```
+lib/data/db/schema.dart      Tables.behaviorQuantSpec / Tables.axisDefinition + kQuantTables（2 表 + 1 索引）
+lib/data/db/migrations.dart  version 5；v4 → v5 只跑 kQuantTables（IF NOT EXISTS，重复升级不炸）
+lib/data/dao/quant_dao.dart  行↔模型；upsert 先读 created_at/revision 再 replace（minSdk 23 的 SQLite 没 upsert 语法）
+lib/data/repository/quant_repository.dart  唯一写入口：四道闸在前，写库在后；删维度前先查有没有口径在用它
+lib/data/repository/custom_behavior_repository.dart  create 事务里多写一条 linear 基线；remove 一起删
+```
+
+- **两条 CHECK 是库层的硬约束**：`target_dose > 0`、`shape_kind` 四选一、
+  `dim_kind` 两选一且 `ability` 必须 `decay_tau_days > 0`。
+  `schema_check.py` 用真 SQLite 逐条验证它们会拒绝（不是靠代码自觉）。
+- **`axis_definition` 没有 `default_weight` 列**：轴权重是系数，必须住 `BalanceConfig`
+  （`axisWeight.<key>` 走 configOverride）。放进表就能绕过重算通道，铁律 5 当场破。
+- **建项目的基线口径与 v1.1.3 逐字等价**（那时 `derive` 里就是 `实际量 / 目标量`），
+  所以口径开始入库、分数一点没变；下一步 `derive` 改读它，同样的记录仍得同样的分。
+- **老 DDL 零改动**：`git diff lib/data/db/schema.dart` 的删除行是 0。
+- 新增测试：`test/data/quant_dao_test.dart`（19）+ `quant_repository_test.dart`（12），
+  含"在已 v5 的库上重跑 v4→v5 不炸"与"从 v1 兜底升级"两条迁移幂等用例。
+
+本轮 domain 新增（纯增量，**既有 lib 文件未被改写**，无人 import，行为零变化）：
+
+```
+lib/domain/quant/quant.dart            统一出口（上层只 import 这个）
+lib/domain/quant/dose_shape.dart       四种形状 + 参数白名单 + 尺度不变
+lib/domain/quant/axis_registry.dart    AxisSpec / AxisKind / AxisRegistry（unknown 不回退 strength）
+lib/domain/quant/quant_measure.dart    MeasureKind + ImpactShare（量什么 / 落在哪）
+lib/domain/quant/quant_spec.dart       QuantSpec（折算唯一出口 doseFractionFor）
+lib/domain/quant/quant_validate.dart   四道闸 + 份额归一 + 新维度降级
+lib/domain/quant/quant_request.dart    导出端：给网页 AI 的请求文本
+lib/domain/quant/quant_response.dart   导入端：解析 + 自带 extractJson（不 import anchor）
+lib/domain/models/custom_behavior.dart     记录（数据）
+lib/domain/models/custom_behavior_def.dart 适配器（数据 → BehaviorDef）
+lib/presentation/quant/shape_picker.dart   四选一控件（新建页 / 将来的口径页共用）
+test/quant/*.dart                     5 文件 / 92 个 test
+```
+
+**这一轮还做了一次切割**（不是重构洁癖，是为了不让 import 关系骗人）：
+
+- `quant_spec.dart` 447 行 → `quant_measure` / `quant_spec` / `quant_validate` 三份。
+  一个文件里塞"输入形状 + 规格 + 四道闸"会让人以为校验和折算是一层；
+  实际上一份是数据、一份是算式、一份是守卫。
+- `quant_codec.dart` 406 行 → `quant_request` / `quant_response`。
+  导出失败（文本没说清）与导入失败（AI 回复不合规）是两类问题，混在一起排查会串味。
+- `custom_behavior.dart` → 记录留原处，`linearBaselineFor` / `customBehaviorDef`
+  切到 `custom_behavior_def.dart`。好处很实在：**模型文件不再 import quant 层**，
+  "数据" 与 "适配器" 在 import 图上分开了。
+- `new_behavior_page.dart` 里的 `_shapePicker()` → `presentation/quant/shape_picker.dart`。
+  口径编辑页要用同一个控件，两处各写一遍必然得到两种措辞。
+
+- **边界守卫已加**（`tools/preflight.sh` 4e 四条 + 4f 一条 API 清单）：quant 层零 Flutter/data 依赖、
+  结算/算法层不许反向 import quant（接线只许走 `lib/domain/models`）、
+  quant 层不许出现 `expPerPoint|applyExp|totalExp|SettlementPipeline`、quant 与 anchor 互不依赖；
+  **4f** 列了 17 个公开声明，切文件时掉一个就红——因为 `parse_dart` 只查语法、
+  `check_symbols` 只查类型 import，整段丢函数它们都看不出来（刚踩过）。
+- **`test/quant/` 已进 CI**（`.github/workflows/build-apk.yml` 第 81 行）。
+  这是故意的：仓库那 6 个红测试就是因为从没在 CI 上跑过（七之六）。
+  第一次跑红就拿真实报错回来修，不许删断言。
+- 静态验收：`parse_dart.py` 164 文件 0 错 / `check_symbols.py` 400 符号无缺失 /
+  preflight 4d + 4e 全绿（另三处 ✗ 是沙箱无 SDK 的既有状态）。
+- **顺手修的一处真 bug**：`create(quant:)` 原来用默认注册表（只有内置 5 维）校验，
+  口径挂在用户自建维度上时会被 `T_AXIS_DEMOTED` 静默降成体验维度——分数当场消失。
+  现在先用 `_quant.axes(_db)` 把真注册表读出来再判，有回归测试。
+**分水岭已过（v1.2.0 第三步，用户侧可见）**：
+
+```
+custom_behavior.dart   customBehaviorDef(r, {QuantSpec? quant})
+                       + linearBaselineFor(r)（唯一基线定义处）
+                       derive 里 fraction = spec.doseFractionFor(dose)，不再自己除
+behavior_library.dart  replace(defs)：同名 code 原地换定义（register 会跳过，口径改不掉）
+app_shell.dart         _syncCustom()：项目 + 口径一起进行为库；口径读失败退回线性
+providers.dart         quantRepositoryProvider + customQuantSpecsProvider
+new_behavior_page.dart 预览页新增「怎么折算」四选一，选的形状随 create() 落库
+repository.create()    可选 quant 参数；**先校验再写**，k=0.37 这种退回线性并记 warn
+```
+
+- **`register` vs `replace` 是真坑**：`register` 跳过已存在 code，所以"口径从线性改成
+  对数"在旧路径下**永远不会生效**（行为码没变）。`replace` 专治这个，测试里两种都断言了。
+- **没口径行的老项目行为不变**：`quant == null` → `linearBaselineFor` → 与 v1.1.x 逐字等价。
+- **目标量只有一个真源**：`create()` 用 `forBehavior(code, targetDose: record.targetDose)`
+  把用户改过的目标量写进口径，`BehaviorDef.targetDose` 也从口径取。
+  **将来做编辑功能时必须同时改口径的 target_dose**，否则提问范围与折算分母会对不上。
+- **UI 只给形状不给系数**：六种组合里对数固定 k=1、阈值固定 1 倍目标量。
+  新建时让人填 k 是拿准确性换不必要的复杂度。
+- 新增测试：`test/quant/custom_behavior_quant_test.dart`（11）+ 仓储测试里 3 条
+  （改口径后 derive 从 0.5 变 0.631、手选事件型落库、自由参数退回线性）。
+- **还没做的**：维度注册表接管 `ProjectAxis.values`（v1.2.1）、体验曲线与主图维度选择器
+  （v1.2.2）、口径的独立编辑页（现在只能建项目时选一次）。
+- **v5 迁移还没在真机上跑过**（沙箱只有 ffi）。下次装机第一件事：
+  能进首页 = 迁移通过；若停在启动失败页且阶段是「迁移」，把原文回传——
+  v5 只跑两条 CREATE + 一条 CREATE INDEX，全部 IF NOT EXISTS，最可能的失败是
+  CHECK 写法在设备 SQLite（3.8 × minSdk 23）上不被接受，`schema_check.py` 用的是
+  桌面 SQLite，版本差异测不出来。
+
 ## 七之六、既有红测试：6 个（2026-11-13 首跑全量才暴露）
 
 CI 一直只跑 `flutter test test/data/`，所以 `test/engine` 与 `test/capture` 里的这些
@@ -537,6 +669,9 @@ CI 一直只跑 `flutter test test/data/`，所以 `test/engine` 与 `test/captu
 - **Android 14+ 的 execSQL 拒绝 PRAGMA/SELECT**（v1.0.2 的事故根因，详见六之六）：
   写库语句里 `execute` 只能跑 DDL/DML，查询类一律 `rawQuery`；开库钩子里的语句
   必须 try/catch。代价是黑屏整整一个版本。
+- **口径与项目的目标量必须同步改**：`behavior_quant_spec.target_dose` 是折算分母，
+  `custom_behavior.target_dose` 是提问范围。做编辑功能时两处一起改（同事务），
+  否则"改了目标量但曲线没变"会成为一个很难查的现象。
 - `foreign_keys` 目前在 Android 上**没有显式打开**，而 `tools/schema_check.py` 是打开后
   验 DDL 的、级联删除也确实依赖 FK。要在 `_applyPragmas` 里加
   `PRAGMA foreign_keys = ON` 必须先确认每个仓储的删除顺序都靠 CASCADE 而不是靠"手删子表"，
@@ -606,6 +741,15 @@ CI 一直只跑 `flutter test test/data/`，所以 `test/engine` 与 `test/captu
 > ③ 饮食采集入口没做，`EnergyLedger.intakeKcal` 恒为 0；
 > ④ `PRAGMA foreign_keys = ON` 没开（要先审删除顺序，配 DeletingOrder 测试）；
 > ⑤ 刻度图（AnchorTierBar）只在刻度页用，明细页还没显示"这条是先验"。
+> ⑥ 量化形状层（`QUANT-PLUGIN.md`）：domain 5 文件 + 测试 4 文件（81 test，已进 CI）
+>    + v5 迁移两张表（`behavior_quant_spec` / `axis_definition`）+ DAO/仓储
+>    + 自建项目创建时写 linear 基线，全部已落；preflight 4e 四条守卫。
+>    **分水岭已过**：`derive` 已改成读库里口径（linear 时结果完全相同）、
+>    新建页预览已有「怎么折算」四选一、`BehaviorLibrary.replace` 让口径改得掉。
+>    剩下 v1.2.1 维度注册表接管 `ProjectAxis.values`、v1.2.2 体验曲线与主图维度选择器；
+>    以及"口径独立编辑页"（现在只能在建项目时选一次形状）。
+>    注意：`quant` 不许被 engine/settlement import，接线口只有 `lib/domain/models`；
+>    轴权重永远住 `BalanceConfig`，不许落表。
 >
 > 三条红线：不加 INTERNET 权限（AI 全走剪贴板旁路）；
 > 结算/算法层不许 import anchor（preflight 4d 会红）；既有 17 张表的 DDL 一条不改。

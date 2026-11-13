@@ -9,8 +9,10 @@ import 'package:exp_ledger/domain/capture/capture_state_machine.dart';
 import 'package:exp_ledger/domain/capture/intent_matcher.dart';
 import 'package:exp_ledger/domain/enums.dart';
 import 'package:exp_ledger/domain/models/custom_behavior.dart';
+import 'package:exp_ledger/domain/models/custom_behavior_def.dart';
 import 'package:exp_ledger/domain/models/draft_entry.dart';
 import 'package:exp_ledger/domain/models/user_profile.dart';
+import 'package:exp_ledger/domain/quant/quant.dart';
 import 'package:exp_ledger/presentation/capture/capture_controller.dart';
 import 'package:exp_ledger/presentation/capture/capture_page.dart';
 import 'package:exp_ledger/presentation/chart/chart_page.dart';
@@ -36,13 +38,31 @@ class AppShell extends ConsumerStatefulWidget {
 class _AppShellState extends ConsumerState<AppShell> {
   late final BehaviorLibrary _library = BehaviorLibrary();
 
-  Future<void> _loadCustom() async {
+  /// 把自建项目 + 它们的量化口径一起同步进行为库。
+  ///
+  /// 两件事分开失败：项目读不到 → 内置库照常用；口径读不到 → 退回线性基线。
+  /// 一个口径表读不出来，不该让用户连记录都记不了。
+  ///
+  /// 用 `replace` 而不是 `register`：行为码不变、口径变了（linear → 对数/事件型）
+  /// 必须换掉旧定义，否则改了形状采集页还用旧口径。
+  Future<void> _syncCustom() async {
     try {
       final List<CustomBehaviorRecord> records =
           await ref.read(customBehaviorRepositoryProvider).list();
+
+      Map<String, QuantSpec> specs = const <String, QuantSpec>{};
+      try {
+        specs = await ref.read(quantRepositoryProvider).specs();
+      } catch (error) {
+        logWarn('custom', '量化口径读取失败，退回线性', detail: '$error');
+      }
+
       if (!mounted) return;
-      _library.register(
-        records.map(customBehaviorDef).toList(growable: false),
+      _library.replace(
+        records
+            .map((CustomBehaviorRecord r) =>
+                customBehaviorDef(r, quant: specs[r.code]))
+            .toList(growable: false),
       );
       setState(() {});
     } catch (error) {
@@ -85,7 +105,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     unawaited(_loadProfile());
     // 自建项目要先进行为库，采集流程才认得出它。
     // 放 post-frame：开库之后才读得到，且不阻塞首帧。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCustom());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncCustom());
   }
 
   @override
@@ -159,9 +179,8 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   Future<void> _openCapture() async {
-    // 先刷新自建项目：刚建的项目必须能在这次采集里被认出来。
-    // register 按 code 去重，重复调用无副作用。
-    await _loadCustom();
+    // 先刷新自建项目与口径：刚建的项目、刚改的口径都必须能在这次采集里生效。
+    await _syncCustom();
     if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -197,10 +216,10 @@ class _AppShellState extends ConsumerState<AppShell> {
     ref.listen<AsyncValue<List<CustomBehaviorRecord>>>(customBehaviorsProvider,
         (AsyncValue<List<CustomBehaviorRecord>>? previous,
             AsyncValue<List<CustomBehaviorRecord>> next) {
-      next.whenData((List<CustomBehaviorRecord> records) {
-        _library.register(
-          records.map(customBehaviorDef).toList(growable: false),
-        );
+      next.whenData((List<CustomBehaviorRecord> _) {
+        // 记录变了就重读一次口径（口径写库后 invalidate 的是它自己的 provider，
+        // 这里统一重拉，避免两个 provider 的刷新时机打架）。
+        unawaited(_syncCustom());
       });
     });
 

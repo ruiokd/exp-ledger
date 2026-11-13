@@ -47,6 +47,12 @@ class Tables {
   /// 用户自建的项目（内置行为库之外的那些，「上一堂课」之类）。
   static const String customBehavior = 'custom_behavior';
 
+  // ---- 量化形状层（v1.2.0）----
+  // 与刻度层同一类插件：只存「这条行为怎么量」「有哪些自定义维度」，
+  // 不参与结算。preflight 4e 守着"结算层不许 import quant"。
+  static const String behaviorQuantSpec = 'behavior_quant_spec';
+  static const String axisDefinition = 'axis_definition';
+
   // ---- 内部表 ----
   static const String dailyLogHistory = 'daily_log_history';
   static const String dirtyDay = 'dirty_day';
@@ -76,6 +82,8 @@ class Tables {
     declaredImpact,
     anchorEvidence,
     customBehavior,
+    behaviorQuantSpec,
+    axisDefinition,
   ];
 }
 
@@ -105,6 +113,9 @@ class Indexes {
   static const String anchorRevisionTime = 'ix_anchor_revision_time';
   static const String anchorEvidenceBehavior = 'ix_anchor_evidence_behavior';
   static const String customBehaviorEnabled = 'ix_custom_behavior_enabled';
+
+  // 量化形状层
+  static const String axisDefinitionKind = 'ix_axis_definition_kind';
 }
 
 /// 自建项目的 DDL。
@@ -134,6 +145,60 @@ CREATE TABLE IF NOT EXISTS custom_behavior (
   '''
 CREATE INDEX IF NOT EXISTS ix_custom_behavior_enabled
   ON custom_behavior (enabled, updated_at DESC)
+''',
+];
+
+/// 量化形状层的 DDL（两张表 + 一个索引）。
+///
+/// 为什么是两张新表而不是给 `custom_behavior` 加列：
+///   1. `custom_behavior` 是 v4 已发布的表，加列要做 ALTER；这条链上已经
+///      因为"顺手改一下"炸过一次启动（六之六），能不加就不加。
+///   2. 「怎么量」和「这是什么行为」生命周期不同：行为可以改名、改单位，
+///      而量化口径改一次就要留下痕迹（[revision]），两者混在一行里没法回看。
+///
+/// `CHECK` 是硬约束，不是文档：
+///   - `target_dose > 0`：分母为 0 的折算在任何层都没有意义；
+///   - `shape_kind` 四选一：白名单之外的形状必须由代码打回，不能靠调用方自觉；
+///   - `dim_kind` 两选一，且 `ability` 必须有衰减常数（说不出"为什么掉这么慢"
+///     就不配进能力曲线——这条在 domain 里也判一次，这里再兜一次）。
+const List<String> kQuantTables = <String>[
+  '''
+CREATE TABLE IF NOT EXISTS behavior_quant_spec (
+  behavior_code TEXT PRIMARY KEY,
+  measure_kind TEXT NOT NULL,
+  measure_unit TEXT NOT NULL,
+  how_to_check TEXT NOT NULL DEFAULT '',
+  shape_kind TEXT NOT NULL DEFAULT 'linear'
+    CHECK (shape_kind IN ('linear', 'log', 'saturating', 'threshold')),
+  shape_k REAL,
+  shape_theta_fraction REAL,
+  target_dose REAL NOT NULL CHECK (target_dose > 0),
+  impact_json TEXT NOT NULL DEFAULT '[]',
+  citation TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT 'userPrior',
+  note TEXT NOT NULL DEFAULT '',
+  revision INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)
+''',
+  '''
+CREATE TABLE IF NOT EXISTS axis_definition (
+  axis_key TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  dim_kind TEXT NOT NULL DEFAULT 'experience'
+    CHECK (dim_kind IN ('ability', 'experience')),
+  decay_tau_days REAL NOT NULL DEFAULT 0
+    CHECK (dim_kind <> 'ability' OR decay_tau_days > 0),
+  decay_citation TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)
+''',
+  '''
+CREATE INDEX IF NOT EXISTS ix_axis_definition_kind
+  ON axis_definition (dim_kind, enabled)
 ''',
 ];
 
@@ -588,4 +653,9 @@ const List<String> kCreateStatements = <String>[
   // 单位、档位仍住在 user_anchor / declared_impact（一个行为一套刻度），
   // 这里存的是画卡片和生成提问要用的快照。
   ...kCustomBehaviorTables,
+
+  // ---------------------------------------------------------------- 量化形状层
+  // v1.2.0 新增：怎么量 + 自定义维度。只追加，不动上面任何一句 DDL，
+  // 17 张老表一条没改（`tools/schema_check.py` 会逐表数一遍列）。
+  ...kQuantTables,
 ];

@@ -15,6 +15,8 @@ import 'package:exp_ledger/domain/anchor/anchor.dart';
 import 'package:exp_ledger/domain/enums.dart';
 import 'package:exp_ledger/domain/models/custom_behavior.dart';
 import 'package:exp_ledger/domain/models/project_axis.dart';
+import 'package:exp_ledger/domain/quant/quant.dart';
+import 'package:exp_ledger/presentation/quant/shape_picker.dart';
 import 'package:exp_ledger/presentation/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -41,6 +43,11 @@ class _NewBehaviorPageState extends ConsumerState<NewBehaviorPage> {
   ProjectAxis _axis = ProjectAxis.discipline;
   BehaviorCategory _category = BehaviorCategory.positive;
   MeasurementClass _cls = MeasurementClass.formula;
+
+  /// 折算方式。默认线性（= v1.1.x 的行为），用户可以在预览里改成
+  /// 对数/饱和/事件型——「看一场电影」这类就该是事件型。
+  DoseShape _shape = DoseShape.linear;
+
   NewBehaviorProposal? _proposal;
   String? _error;
   bool _busy = false;
@@ -352,8 +359,7 @@ class _NewBehaviorPageState extends ConsumerState<NewBehaviorPage> {
           ),
           const SizedBox(height: Tokens.gapS),
           Text(
-            '这两个数决定"做了多少算做满"：实际量 ÷ 一次算多少 = 计入比例。'
-            'AI 给的可以改，改完以你的为准。',
+            '这两个数决定"做了多少算做满"。AI 给的可以改，改完以你的为准。',
             style: const TextStyle(
               fontSize: Tokens.fontMicro,
               color: AppColors.inkFaint,
@@ -361,6 +367,11 @@ class _NewBehaviorPageState extends ConsumerState<NewBehaviorPage> {
             ),
           ),
           const SizedBox(height: Tokens.gapM),
+          ShapePicker(
+            value: _shape,
+            onChanged: (DoseShape s) => setState(() => _shape = s),
+          ),
+          const SizedBox(height: Tokens.gapS),
           SizedBox(
             height: 46,
             width: double.infinity,
@@ -472,6 +483,30 @@ class _NewBehaviorPageState extends ConsumerState<NewBehaviorPage> {
       _toast('「一次算多少」要是大于 0 的数字');
       return;
     }
+    final String unit =
+        _doseUnit.text.trim().isEmpty ? p.doseUnit : _doseUnit.text.trim();
+
+    // 口径草稿：code 先占位，`create` 会用正式 code 重建（目标量/单位也以
+    // 用户改过的值为准）。形状是这里唯一由用户决定的东西。
+    final QuantSpec quant = QuantSpec(
+      behaviorCode: 'pending',
+      measureKind: MeasureKind.guessFromUnit(unit),
+      measureUnit: unit,
+      shape: DoseShapeSpec(kind: _shape),
+      targetDose: target,
+      impact: <ImpactShare>[
+        ImpactShare(
+          axisKey: _axis.name,
+          axisLabel: _axis.label,
+          kind: AxisKind.ability,
+          share: 1,
+        ),
+      ],
+      citation: '新建时手选折算方式：${_shape.label}',
+      source: 'userPrior',
+      note: '折算方式由用户在建项目时选定；AI 提议：${p.rationale}',
+    );
+
     setState(() => _busy = true);
     try {
       final CustomBehaviorRecord record =
@@ -483,15 +518,16 @@ class _NewBehaviorPageState extends ConsumerState<NewBehaviorPage> {
                 unitLabel: p.unitLabel,
                 definitionText: p.definitionText,
                 targetDose: target,
-                doseUnit:
-                    _doseUnit.text.trim().isEmpty ? p.doseUnit : _doseUnit.text.trim(),
+                doseUnit: unit,
                 tier: p.appliedTier,
                 description: _desc.text.trim().isEmpty ? p.description : _desc.text.trim(),
                 referenceObject: p.referenceObject,
                 referenceRangeId: p.referenceRangeId,
                 note: '自建项目（AI 提议已确认）：${p.rationale}',
+                quant: quant,
               );
       ref.invalidate(customBehaviorsProvider);
+      ref.invalidate(customQuantSpecsProvider);
       ref.invalidate(anchorCardsProvider);
       if (!mounted) return;
       Navigator.of(context).pop(record);
