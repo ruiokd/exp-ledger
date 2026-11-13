@@ -32,6 +32,8 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   数据层测试含新用例通过）
 - 第 12 步 ✅ **日志纪律（v1.1.4）**：不记用户自由文本；上次运行单独分节，
   `errorCount` 只数本次；日志页加「含上次运行」开关。详见六之十三。版本 `1.1.4+8`
+  **APK 已产出**：`dist/exp-ledger-1.1.4.apk` 与 `/chat/outputs/` 同名副本，33 MB，
+  sha256 `f6a434b35f4eec5d…`，CI run 43368361786 全绿
 - 第 11 步 ✅ **自建项目（v1.1.3）**：新表 + DAO/Repository + AI 提示词与解析 + 新建页 +
   采集页/刻度页两个入口 + 关 R8（细节见六之十一、六之十二）。版本 `1.1.3+7`
   **APK 已产出**：`dist/exp-ledger-1.1.3.apk` 与 `/chat/outputs/` 同名副本，33 MB，
