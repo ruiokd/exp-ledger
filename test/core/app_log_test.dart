@@ -63,11 +63,15 @@ void main() {
     expect(text, contains(' I [db] '));
   });
 
-  test('seedFromLines 把上次运行的日志塞回来（标 last）', () {
+  test('seedFromLines 把上次运行的日志塞回来（标记 previousRun）', () {
     appLog.seedFromLines(<String>['旧日志一', '旧日志二', '']);
-    final List<LogEntry> all = appLog.snapshot();
+    // 默认视图不含上次运行，必须显式要求才看得到——这是 v1.1.4 的刻意行为。
+    expect(appLog.snapshot(), isEmpty);
+    final List<LogEntry> all =
+        appLog.snapshot(includePreviousRun: true);
     expect(all.length, 2); // 空行被跳过
     expect(all.first.tag, 'last');
+    expect(all.first.previousRun, isTrue);
     expect(all.first.message, '旧日志一');
   });
 
