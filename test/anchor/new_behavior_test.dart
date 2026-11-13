@@ -27,7 +27,7 @@ void main() {
     });
 
     test('沿用同一套档位纪律', () {
-      expect(text, contains('不许给数字'));
+      expect(text, contains('不给数字'));
       expect(text, contains('large 我这边锁着'));
       expect(text, contains('没有 citation 会自动降一档'));
     });
