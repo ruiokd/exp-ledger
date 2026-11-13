@@ -30,11 +30,22 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   **APK 已产出**：`dist/exp-ledger-1.0.2.apk` / `/chat/outputs/` 同名副本，
   31.7 MB，sha256 `886f02af…5682a5`，CI run 43293073012 全绿（analyze 0 error/0 warning，
   数据层测试含新用例通过）
+- 第 8 步 ✅ **刻度标定层（Anchor Layer）全链路：domain + 数据层 + UI**
+  设计说明见 `ANCHOR-PLUGIN.md`
+  domain `lib/domain/anchor/` 6 文件 / 2.75k 行；数据层 `anchor_dao` + `anchor_repository` 491 行；
+  UI `lib/presentation/anchor/` 5 文件 / 1.5k 行；测试 4 文件（domain 3 + 数据层 1）
+  覆盖：单位定义（UserAnchor）／档位声明（DeclaredImpact，≤0.5）／实测覆盖
+  （AnchorEvidence → `replacedBy`，同一事务）／引导流程 Step 1–4（一次一问）／
+  系统参照区间 7 张／**网页版 AI 的离线提案协议**（导出请求文本 → 粘回复 → 逐条校验 →
+  用户确认）／四档横轴「先验空心点 vs 实测实心点」小图
+  schema 升到 **v3**（4 张新表，既有 17 张一条未改）；版本号 `1.1.0+4`
+  静态验收全绿（parse 136 文件 / 符号 359 / DDL 真 SQLite / preflight 4d 三道边界守卫）
 
 ## 三、当前规模
 
-107 个 Dart 文件 / 约 19.2k 行；数据层 32 个文件 / 4.4k 行；UI 层 17 个文件 / 5.8k 行；
-Android 平台层 14 个文件（Kotlin + manifest + res）。测试 9 个文件 / 2.1k 行。
+122 个 Dart 文件（lib）/ 约 24.4k 行；14 个测试文件 / 3.1k 行。
+第 8 步新增：domain 6 文件 2.75k 行 + 数据层 2 文件 491 行 + UI 5 文件 1.5k 行 + 测试 4 文件。
+数据层原 32 文件 / 4.4k 行；UI 原 17 文件 / 5.8k 行；Android 平台层 14 文件。
 
 已经能跑的部分：`main.dart` 开库 → 补算脏日 → `ProviderScope` 注入 → `AppShell` 四页。
 采集窗口从 FAB 进入，确认后落库、刷新全部读接口、并排一条次日确认。
@@ -317,6 +328,69 @@ blob（base64）→ tree（`base_tree` = 远端 tree）→ commit → `PATCH /gi
 落到 dist/ 与 /chat/outputs/`。token 用 classic、勾 `repo` + `workflow`。
 本次实测：推送 20 秒 + 构建 4 分 10 秒，全程一次过。
 
+## 六之八、刻度标定层（第 8 步，改之前必看）
+
+完整设计见 `ANCHOR-PLUGIN.md`。这里只放"会害你返工"的那些。
+
+```
+lib/domain/anchor/
+  anchor.dart            统一出口——data/UI 只 import 这一个文件
+  anchor_models.dart     UserAnchor / DeclaredImpact / AnchorEvidence / AnchorCard + 枚举
+  anchor_config.dart     系数表（先验权重、0.5 封顶、AI 折价、校验门）
+  anchor_engine.dart     全部判定，纯函数，无时钟无 IO
+  onboarding_flow.dart   Step 1–4 渐进引导（一次只问一件事）
+  proposal_codec.dart    网页版 AI 的离线导出/导入协议
+  reference_ranges.dart  7 张系统参照区间（带出处标签 + 限定语）
+```
+
+- **这一层是"先验"，不是"事实"**。它的产出永远不进 `SettlementPipeline`；
+  preflight 4d 第 2 条守着这件事（结算/算法层 import anchor 就红）。
+- **先验权重的唯一出口是 `AnchorEngine.priorWeightFor` / `resolve`**，两处都过
+  `config.clampPrior`。`AnchorConfig.priorWeightCap = 0.5` 是硬上限，
+  把单项调到 0.9 也照样被夹到 0.5（有测试）。
+- **「大」在代码里是锁着的**：`checkTierChange(to: large, hasCalibratedEvidence: false)`
+  返回 `large_locked`；引导流程第 3 步把「大」渲染成"需要一次实测才能选"。
+  不要为了方便把它放开——那是这一层唯一不能被用户自己推翻的规则。
+- **覆盖只走一条路**：`coverWithEvidence(impact, evidence)` 把 `replacedBy` 指向证据，
+  之后 `resolve()` 返回 `priorStillActive: false` 且权重改用证据档位。
+  证据存在但没调用 `coverWithEvidence` 时，`uiNote` 会明说"还没落账"。
+- **刻度变更不追溯**：`scopeForAnchorChange(dayKey)` 决定那天用新刻度还是旧刻度，
+  两边都要 `mustMarkPoint: true`（图上画竖线）。不要写"变更后重跑历史"。
+- **分类在入口分流**：`subjective` 的 EXP 权重恒 0 且 `mayDeduct == false`；
+  `semiObservable` 只出时间占比。别在下游用"乘个 0.1"来实现，那会漏过扣分路径。
+- **AI 提案的身份**：确认前 `aiProposal`（不显示数值），确认后 `userPrior`。
+  不要给 AI 建"自己的通道"——`toDeclaredImpact` 调的就是 `acceptAiProposal`，
+  和手填完全同一条路。
+- **没有 INTERNET 权限，也不许加**。AI 接入口是剪贴板/分享旁路：
+  `buildRequestText` 出去，`decode` 回来。
+
+数据层与 UI（第 8 步后半，改之前必看）：
+
+```
+lib/data/dao/anchor_dao.dart            4 张表的行↔模型搬运，无业务判定
+lib/data/repository/anchor_repository.dart  这一层唯一写入口
+lib/presentation/anchor/anchor_catalog.dart     行为库 → 刻度层的单向适配
+lib/presentation/anchor/anchor_page.dart        总览（卡片 + 裁决 + 记实测）
+lib/presentation/anchor/anchor_onboarding_page.dart  Step 1–4 引导
+lib/presentation/anchor/anchor_proposal_page.dart   网页 AI 的导出/导入/逐条确认
+lib/presentation/anchor/anchor_tier_bar.dart    四档横轴小图（空心点 vs 实心点）
+```
+
+- **`recordEvidence` 必须在一个事务里**做两件事：插证据 + 把 `replaced_by` 指过去。
+  分开做会留下"有证据但先验还生效"的中间态，卡片上会同时显示两套数。
+- **`declareImpact` 有 `already_calibrated` 拒绝**：已被实测覆盖的项不再接受新先验。
+  两套数并存 UI 解释不了，也不该解释。
+- **`saveAnchor` 只追加新的 revision**：按"库里已有几条"截断 `revisionHistory.sublist(n)`，
+  重复保存不会把历史复制一遍。
+- **卡片只有"刻度 + 量级"都齐了才算**：`cards()` 跳过只有 anchor 没有 impact 的项，
+  否则列表里会出现"标了一半"的卡片，看起来像已完成。
+- **`anchor_tier_bar.dart` 不画在主曲线上**：主曲线是五维能力值，刻度层是"这事多重"，
+  两条 y 轴不是一回事，硬叠会被读成"重视程度推动能力"。
+- **UI 只读 `WeightResolution`**：权重、空心/虚线、误差带全来自它；
+  页面里 `(r.effectiveWeight * 100).round()` 是唯一允许的算术。
+- **`AnchorCatalog` 在 presentation**，不在 domain/anchor：通用插件不该认识 28 条行为库。
+  分类规则：负向/计划外 → 半可观测；正向且有 questions → 可公式化；其余 → 仅主观可辨。
+
 ## 七、已知待办与坑
 
 - **Android 14+ 的 execSQL 拒绝 PRAGMA/SELECT**（v1.0.2 的事故根因，详见六之六）：
@@ -354,27 +428,39 @@ blob（base64）→ tree（`base_tree` = 远端 tree）→ commit → `PATCH /gi
 
 ## 七之补、当前卡点（新对话第一眼要看）
 
-1. **启动崩溃已确诊并修好**（v1.0.2：PRAGMA 改 rawQuery + 吞异常，见六之六）。
+1. **第 8 步全链路已在仓库里，但没经过真编译器**：
+   `flutter analyze` + `flutter test test/anchor/ test/data/anchor_repository_test.dart`
+   一次都没跑过（沙箱无 SDK）。这是当前唯一的技术风险——UI 层有 1.5k 行 Flutter 代码，
+   静态检查只保证语法和 import，保证不了类型。
+   报错预案按概率排序：① `SoftCard`/`AppColors` 之类主题符号在 anchor_page 里没用到（应该不会）；
+   ② `StatefulBuilder` 里 `Navigator.of(ctx)` 的 ctx 遮蔽；③ `DropdownButton` 的泛型推断；
+   ④ `AnchorCatalog()` 默认构造在 const 上下文里被误用（`AnchorPage` 的 `catalog` 是可空字段，
+   `const AnchorPage()` 合法，但 `_catalog` getter 每次都 new 一个库里对象，属可接受开销）。
+2. **启动崩溃已确诊并修好**（v1.0.2：PRAGMA 改 rawQuery + 吞异常，见六之六）。
    待办只剩"装机验证"：装 v1.0.2 →
    - 能进首页 = 修对了；
    - 若仍停在诊断页，**先看阶段**：`打开数据库` = 还有第二条开库语句中招；
      `迁移` = 迁移里某条 DDL 在设备 SQLite 上不被接受（把文本回传即可）；
-2. **签名已固定**（`android/app/debug.keystore`），v1.0.1 → v1.0.2 可覆盖安装，不用卸载。
-3. 产物已出：`dist/exp-ledger-1.0.2.apk`（sha256 `886f02af…`，CI run 43293073012）。
+3. **签名已固定**（`android/app/debug.keystore`），v1.0.1 → v1.0.2 可覆盖安装，不用卸载。
+4. 产物已出：`dist/exp-ledger-1.0.2.apk`（sha256 `886f02af…`，CI run 43293073012）。
    出包通道见六之七——**沙箱里 `git push` 走不通，必须用 `tools/ship.sh`**。
-4. 装机冒烟清单（v1.0.2 一次性走完，别再分版本）：
+5. 装机冒烟清单（v1.0.2 一次性走完，别再分版本）：
    记录一条 → 杀进程重开看还在 → 提醒设到 2 分钟后等响 → 加桌面小组件看数字 →
    导出看分享面板 → 设置里"重算"一次看曲线是否变。
 
 ## 八、续接提示词（新会话直接粘这段）
 
 > 继续做经验账本项目。先读 `/workspace/exp_ledger/STATE.md`，
-> 里面是完整的进度、架构铁律、数据层结构与实现约定。
-> 现状：第 1–7 步全部完成，v1.0.1 的启动崩溃已在 v1.0.2 确诊并修好
-> （Android 14 execSQL 拒绝 PRAGMA → 改 rawQuery + 吞异常，见 STATE 六之六）。
-> 下一件事：push 到 main 触发 CI 出 `exp-ledger-1.0.2.apk`，装机走七之补的冒烟清单；
-> 若有新报错，先看诊断页的「阶段」再动手。
-> 之后可以做的：饮食采集入口（补 `intakeKcal`）、`PRAGMA foreign_keys = ON`
+> 里面是完整的进度、架构铁律、数据层结构、刻度标定层结构与实现约定；
+> 刻度层的设计细节读 `/workspace/exp_ledger/ANCHOR-PLUGIN.md`。
+> 现状：第 1–7 步完成并出过 APK（v1.0.2）；**第 8 步刻度标定层全链路已写完**
+> （domain + schema v3 四张新表 + DAO/Repository + 设置页入口 + 三个页面 + 四档小图），
+> 版本号已 bump 到 `1.1.0+4`，但**还没经过 `flutter analyze`，也还没出包**。
+> 下一件事：先跑 `flutter analyze` + `flutter test test/anchor/ test/data/`，
+> 绿了再 `bash tools/ship.sh <token>` 出 1.1.0 的 APK。
+> 三条红线：不加 INTERNET 权限；结算/算法层不许 import anchor（preflight 4d 会红）；
+> 既有 17 张表的 DDL 一条不改。
+> 其他可做：饮食采集入口（补 `intakeKcal`）、`PRAGMA foreign_keys = ON`
 > （需先审删除顺序）、把 `tools/parse_dart.py` 的坑写进 skill。
 
 ## 九、交付给用户时的语气约定

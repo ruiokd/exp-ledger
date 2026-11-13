@@ -36,6 +36,14 @@ class Tables {
   // ---- 结算产物 ----
   static const String daySettlement = 'day_settlement';
 
+  // ---- 刻度标定层（第 8 步）----
+  // 这四张表是后加的插件：它们只存"用户怎么量""估多重""实测多重"，
+  // 不参与任何既有结算路径（preflight 4d 守着这条）。
+  static const String userAnchor = 'user_anchor';
+  static const String anchorRevision = 'anchor_revision';
+  static const String declaredImpact = 'declared_impact';
+  static const String anchorEvidence = 'anchor_evidence';
+
   // ---- 内部表 ----
   static const String dailyLogHistory = 'daily_log_history';
   static const String dirtyDay = 'dirty_day';
@@ -60,6 +68,10 @@ class Tables {
     configOverride,
     appSetting,
     dirtyDay,
+    userAnchor,
+    anchorRevision,
+    declaredImpact,
+    anchorEvidence,
   ];
 }
 
@@ -84,7 +96,84 @@ class Indexes {
   static const String confirmationDue = 'ix_confirmation_due';
   static const String calibrationTime = 'ix_calibration_time';
   static const String sessionDay = 'ix_session_day';
+
+  // 刻度标定层
+  static const String anchorRevisionTime = 'ix_anchor_revision_time';
+  static const String anchorEvidenceBehavior = 'ix_anchor_evidence_behavior';
 }
+
+/// 刻度标定层的 DDL（四张表 + 两个索引）。
+///
+/// 抽成常量是因为它要在两处用到：全新建库（[kCreateStatements] 里展开）
+/// 和 v2 → v3 迁移。两处各抄一遍 SQL 迟早漂移（`app_setting` 的教训）。
+///
+/// 设计要点：
+///   - `user_anchor` / `declared_impact` 的主键都是 `behavior_id`：
+///     一个行为只有一张刻度卡片，天然幂等（重复保存只覆盖）。
+///   - 证据只追加（`anchor_evidence` 无更新路径），先验的 `replaced_by`
+///     指向证据 id——「当初估的是中偏大、实测接近中」这句话要可回溯。
+///   - 刻度变更进 `anchor_revision`，图表在这些时间点画竖线；
+///     历史记录不重算（哪天的记录用哪天的刻度，由 `AnchorEngine` 判定）。
+const List<String> kAnchorTables = <String>[
+  '''
+CREATE TABLE IF NOT EXISTS user_anchor (
+  behavior_id TEXT PRIMARY KEY,
+  unit_label TEXT NOT NULL,
+  definition_text TEXT NOT NULL DEFAULT '',
+  reference_object TEXT NOT NULL DEFAULT '',
+  measurement_class TEXT NOT NULL,
+  reference_range_id TEXT NOT NULL DEFAULT 'custom',
+  calibrated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)
+''',
+  '''
+CREATE TABLE IF NOT EXISTS anchor_revision (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  behavior_id TEXT NOT NULL,
+  field TEXT NOT NULL,
+  from_value TEXT NOT NULL DEFAULT '',
+  to_value TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT '',
+  changed_at TEXT NOT NULL
+)
+''',
+  '''
+CREATE INDEX IF NOT EXISTS ix_anchor_revision_time
+  ON anchor_revision (behavior_id, changed_at DESC)
+''',
+  '''
+CREATE TABLE IF NOT EXISTS declared_impact (
+  behavior_id TEXT PRIMARY KEY,
+  tier TEXT NOT NULL,
+  source TEXT NOT NULL,
+  weight REAL NOT NULL,
+  declared_at TEXT NOT NULL,
+  replaced_by TEXT,
+  note TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+)
+''',
+  '''
+CREATE TABLE IF NOT EXISTS anchor_evidence (
+  id TEXT PRIMARY KEY,
+  behavior_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  measured_value REAL NOT NULL,
+  unit TEXT NOT NULL,
+  derived_tier TEXT NOT NULL,
+  performed_at TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  confidence TEXT NOT NULL DEFAULT 'calibrated',
+  created_at TEXT NOT NULL
+)
+''',
+  '''
+CREATE INDEX IF NOT EXISTS ix_anchor_evidence_behavior
+  ON anchor_evidence (behavior_id, performed_at DESC)
+''',
+];
 
 /// `app_setting` 的建表语句。
 ///
@@ -454,4 +543,8 @@ const List<String> kCreateStatements = <String>[
     marked_at TEXT NOT NULL
   )
   ''',
+
+  // ---------------------------------------------------------------- 刻度标定层
+  // 第 8 步新增。只追加，不动上面任何一句 DDL。
+  ...kAnchorTables,
 ];

@@ -7,6 +7,7 @@
 library;
 
 import 'package:exp_ledger/core/config/balance_config.dart';
+import 'package:exp_ledger/domain/anchor/anchor.dart';
 import 'package:exp_ledger/core/util/date_key.dart';
 import 'package:exp_ledger/data/data.dart';
 import 'package:exp_ledger/domain/enums.dart';
@@ -343,3 +344,29 @@ final FutureProvider<SettingsView> settingsProvider =
     dirtyCount: results[4] as int,
   );
 });
+
+// ---------------------------------------------------------------- 刻度标定层
+
+/// 判定引擎（纯函数，const 实例）。UI 与仓储共用同一个，避免两套规则。
+final Provider<AnchorEngine> anchorEngineProvider =
+    Provider<AnchorEngine>((ref) => const AnchorEngine());
+
+final Provider<AnchorRepository> anchorRepositoryProvider =
+    Provider<AnchorRepository>(
+  (ref) => AnchorRepository(
+    database: ref.watch(appDatabaseProvider),
+    engine: ref.watch(anchorEngineProvider),
+  ),
+);
+
+/// 个人刻度卡片。写入后 `ref.invalidate(anchorCardsProvider)` 即可刷新。
+final FutureProvider<List<AnchorCard>> anchorCardsProvider =
+    FutureProvider<List<AnchorCard>>(
+  (ref) => ref.watch(anchorRepositoryProvider).cards(),
+);
+
+/// 每条卡片对应的权重裁决（先验 / 已被实测覆盖）。
+final FutureProvider<Map<String, WeightResolution>> anchorResolutionsProvider =
+    FutureProvider<Map<String, WeightResolution>>(
+  (ref) => ref.watch(anchorRepositoryProvider).resolutions(),
+);

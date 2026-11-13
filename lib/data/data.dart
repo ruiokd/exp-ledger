@@ -5,6 +5,7 @@
 library;
 
 export 'dao/ability_snapshot_dao.dart';
+export 'dao/anchor_dao.dart';
 export 'dao/badge_dao.dart';
 export 'dao/calibration_dao.dart';
 export 'dao/capture_session_dao.dart';
@@ -27,6 +28,7 @@ export 'db/json_cols.dart';
 export 'db/migrations.dart';
 export 'db/schema.dart';
 export 'models/data_models.dart';
+export 'repository/anchor_repository.dart';
 export 'repository/capture_repository.dart';
 export 'repository/config_repository.dart';
 export 'repository/confirmation_repository.dart';

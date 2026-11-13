@@ -59,6 +59,8 @@ def main() -> int:
         "load_index", "day_settlement", "ability_snapshot", "forecast_point",
         "memory_item", "confirmation_task", "badge", "config_override",
         "app_setting", "dirty_day",
+        # 第 8 步：刻度标定层（纯增量，不动上面任何一张）
+        "user_anchor", "anchor_revision", "declared_impact", "anchor_evidence",
     }
     missing = expected_tables - tables
     if missing:
@@ -75,6 +77,7 @@ def main() -> int:
     for name in (
         "ux_daily_log_idem", "ux_valence_slot", "ux_negative_primary",
         "ix_history_key", "ix_memory_due", "ix_forecast_day",
+        "ix_anchor_revision_time", "ix_anchor_evidence_behavior",
     ):
         if name not in indexes:
             print(f"  ✗ 缺索引：{name}")
@@ -136,6 +139,48 @@ def main() -> int:
     n = con.execute("SELECT COUNT(*) FROM forecast_point").fetchone()[0]
     assert n == 1, n
     print("  ✓ 预测点主键 (生成日, 轴, horizon) 生效")
+
+    # ---- 刻度标定层：一个行为一张卡（主键即幂等） ----
+    con.execute(
+        "INSERT INTO user_anchor (behavior_id, unit_label, definition_text,"
+        " measurement_class, reference_range_id, calibrated_at, created_at, updated_at)"
+        " VALUES (?,?,?,?,?,?,?,?)",
+        ("strength_training", "一次有效组", "接近力竭且动作达标", "formula",
+         "strength_sets", "2026-03-01T20:00:00", "2026-03-01T20:00:00",
+         "2026-03-01T20:00:00"),
+    )
+    con.execute(
+        "INSERT OR REPLACE INTO user_anchor (behavior_id, unit_label, definition_text,"
+        " measurement_class, reference_range_id, calibrated_at, created_at, updated_at)"
+        " VALUES (?,?,?,?,?,?,?,?)",
+        ("strength_training", "一次有效组", "接近力竭且动作达标（第二次标定）",
+         "formula", "strength_sets", "2026-03-01T20:00:00", "2026-03-01T20:00:00",
+         "2026-04-01T20:00:00"),
+    )
+    n = con.execute("SELECT COUNT(*) FROM user_anchor").fetchone()[0]
+    assert n == 1, f"同一行为应只有一张刻度卡片，实际 {n}"
+    print("  ✓ 一个行为一张刻度卡片（behavior_id 主键覆盖）")
+
+    # 证据只追加：先验的 replaced_by 指向它
+    con.execute(
+        "INSERT INTO anchor_evidence (id, behavior_id, kind, measured_value, unit,"
+        " derived_tier, performed_at, note, confidence, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?)",
+        ("ev-1", "strength_training", "measuredTest", 10.0, "一次有效组",
+         "medium", "2026-03-05T20:00:00", "", "calibrated", "2026-03-05T20:00:00"),
+    )
+    con.execute(
+        "INSERT INTO declared_impact (behavior_id, tier, source, weight, declared_at,"
+        " replaced_by, note, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+        ("strength_training", "mediumHigh", "userPrior", 0.45,
+         "2026-03-01T20:00:00", "ev-1", "", "2026-03-05T20:00:00"),
+    )
+    row = con.execute(
+        "SELECT tier, replaced_by FROM declared_impact WHERE behavior_id = ?",
+        ("strength_training",),
+    ).fetchone()
+    assert row == ("mediumHigh", "ev-1"), row
+    print("  ✓ 先验被实测覆盖（replaced_by 指向证据）")
 
     # ---- 各表列数（防止建表语句被截断） ----
     print("\n表 / 列数：")

@@ -101,6 +101,34 @@ else
   bad "版本号不一致：两处都要改，否则装上去看不出是新包"
 fi
 
+echo "== 4d. 刻度标定层（anchor）的边界守卫 =="
+# 这一层是后加的插件。它一旦被结算流水线 import，就说明"先验"和"事实"混了：
+#   - anchor 层只许依赖 dart: 与 lib/domain/enums.dart（纯函数，可脱机测试）
+#   - 结算/算法/采集/预测不许反向依赖它（否则改先验会重算历史 EXP）
+#   - 它不许直接碰 daily_log（写库唯一通道仍是 CaptureRepository.commit）
+ANCHOR_LAYER_LEAK=$(grep -rn --include='*.dart' -E "package:(flutter|sqflite|share_plus)|exp_ledger/(data|presentation|services)" lib/domain/anchor/ 2>/dev/null)
+if [ -n "$ANCHOR_LAYER_LEAK" ]; then
+  bad "anchor 层引入了不该有的依赖（必须保持零 Flutter / 零 data 依赖）："
+  printf '%s\n' "$ANCHOR_LAYER_LEAK"
+else
+  ok "anchor 层只依赖 dart: 与 domain/enums.dart"
+fi
+ANCHOR_REVERSE_DEP=$(grep -rn --include='*.dart' "domain/anchor" lib/domain/engine lib/domain/settlement lib/domain/science lib/domain/behaviors lib/domain/capture lib/domain/forecast 2>/dev/null)
+if [ -n "$ANCHOR_REVERSE_DEP" ]; then
+  bad "结算/算法层反向依赖了 anchor（先验会污染事实账）："
+  printf '%s\n' "$ANCHOR_REVERSE_DEP"
+else
+  ok "结算/算法层没有反向依赖 anchor"
+fi
+# 注释行里出现表名是允许的（那是在写"本层不碰它"的说明），只拦真代码。
+ANCHOR_WRITES_LOG=$(grep -rn --include='*.dart' -E "daily_log|Tables\.dailyLog" lib/domain/anchor/ 2>/dev/null | grep -vE ':[0-9]+:[[:space:]]*//')
+if [ -n "$ANCHOR_WRITES_LOG" ]; then
+  bad "anchor 层碰了 daily_log（写库唯一通道是 CaptureRepository.commit）："
+  printf '%s\n' "$ANCHOR_WRITES_LOG"
+else
+  ok "anchor 层没有碰 daily_log"
+fi
+
 echo "== 5. 依赖清单 =="
 note "flutter_riverpod ^2.5.1 / sqflite ^2.3.3 / flutter_local_notifications ^17.2.1"
 note "share_plus ^9.0.0 / timezone ^0.9.2 / path_provider ^2.1.3 / fl_chart ^0.68.0"
