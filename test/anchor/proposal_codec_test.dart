@@ -36,7 +36,8 @@ void main() {
     test('把我们的量化公式写给 AI（档位权重 + 置信权重 + EXP）', () {
       expect(text, contains('50%'));
       expect(text, contains('0.6'));
-      expect(text, contains('0.5 EXP/点'));
+      // toStringAsFixed(2) → 「0.50 EXP/点」
+      expect(text, contains('0.50 EXP/点'));
     });
 
     test('只暴露允许引用的参照区间', () {

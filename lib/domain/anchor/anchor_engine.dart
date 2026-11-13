@@ -372,7 +372,9 @@ class AnchorEngine {
     }
 
     if (from != null && !fromEvidence) {
-      final int jump = (to.rank - from.rank).abs();
+      // 跳档门只挡「往上调」：往下调两档是你的判断变保守了，没有理由拦。
+      // 有实测证据时整组门都跳过——证据就是理由。
+      final int jump = to.rank - from.rank;
       if (jump > config.tierJumpMax && !hasCalibratedEvidence) {
         int allowIndex = from.rank + config.tierJumpMax;
         if (allowIndex < 0) allowIndex = 0;
@@ -387,7 +389,7 @@ class AnchorEngine {
               '跨档调整不是不允许，只是要分两步，各留一条理由。',
         );
       }
-      if (to.rank > from.rank && reason.trim().isEmpty) {
+      if (jump > 0 && reason.trim().isEmpty && !hasCalibratedEvidence) {
         return const TierChangeVerdict(
           ok: false,
           code: 'reason_required',

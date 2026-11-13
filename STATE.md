@@ -391,6 +391,24 @@ lib/presentation/anchor/anchor_tier_bar.dart    四档横轴小图（空心点 v
 - **`AnchorCatalog` 在 presentation**，不在 domain/anchor：通用插件不该认识 28 条行为库。
   分类规则：负向/计划外 → 半可观测；正向且有 questions → 可公式化；其余 → 仅主观可辨。
 
+## 七之六、既有红测试：6 个（2026-11-13 首跑全量才暴露）
+
+CI 一直只跑 `flutter test test/data/`，所以 `test/engine` 与 `test/capture` 里的这些
+**从来没在 CI 上执行过**。第 8 步改成跑 `test/data/ test/anchor/` 之后，剩下的债在这里记账。
+**处理原则：先判「代码对还是测试期望对」，不许为了绿去改期望值。**
+
+| 测试 | 期望 | 实际 | 初判 |
+|---|---|---|---|
+| engine/valence_engine 「负向先扣缓冲池，不动总经验」 | 总经验 190 | 200 | 负向没从缓冲池扣，或缓冲池比例与测试设定的 10 点不一致 |
+| capture/state_machine 「主动回忆 20 词，3 天保持率约 68%」 | 0.68 | 0.5115 | 遗忘曲线参数（`memoryStrengthBase` / `reviewBoost`）与测试预设的稳定度不匹配 |
+| capture/state_machine 「只看一遍的保持率显著更低」 | > 0.5115 | 0.5115 | 两条路径算出同一个值 —— 主动回忆加成没进公式 |
+| capture/state_machine 「02:10 入睡，熬夜分钟」 | 110 | 100 | 熬夜越界分钟的起点（睡眠线 00:20）少算 10 分钟 |
+| capture/state_machine 「回执点『改一下』回到第一题，答案仍在」 | 20.0 | `'new'` | 回执阶段回退把答案清成了首项默认值 |
+| capture/state_machine 「上一步回退一道题并清掉该题答案」 | `words` | `method` | 回退步数与测试预期错位一道 |
+
+这 6 条在 v1.0.0–v1.0.2 期间一直存在，只是没跑过。**不影响装机使用**（它们在 domain 算法细节，
+不是崩溃路径），但说明"引擎行为"和"我们以为的引擎行为"有 6 处没对齐。单独一版处理。
+
 ## 七、已知待办与坑
 
 - **Android 14+ 的 execSQL 拒绝 PRAGMA/SELECT**（v1.0.2 的事故根因，详见六之六）：
