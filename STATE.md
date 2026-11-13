@@ -67,9 +67,25 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   manifest 已验：`INTERNET` **不在**，`POST_NOTIFICATIONS` / `RECEIVE_BOOT_COMPLETED` 在，
   `versionName 1.1.0` / `versionCode 4`
 
+- **v1.2.0 已出包（量化形状层 + 自建维度注册表）**：`dist/exp-ledger-1.2.0.apk`
+  与 `/chat/outputs/` 同名副本，34.6 MB，sha256 `7f83601e7da83089…`
+  CI run 43375143712 全绿（analyze 0 error/0 warning，`test/data/ test/anchor/ test/core/ test/quant/`）。
+  包内已验：`INTERNET` **不在**、`versionName 1.2.0`、`com.yg.ledger`、
+  `POST_NOTIFICATIONS`/`RECEIVE_BOOT_COMPLETED` 在、`resources.arsc` 里 `ic_notification` 在、
+  `libapp.so` 里 `behavior_quant_spec` / `axis_definition` / `duration_min` / `saturating` 都在
+  （= v5 迁移与量化层确实编进包里了）。版本 `1.2.0+9`
+  **首跑红过一次**：协议写 `duration_min`、枚举叫 `durationMin`，`tryParse` 只认 `.name`，
+  5 条 protocol 测试红；补 `wire` 名、两套都认（commit `25225d4`）。
+- **待装机验证（v1.2.0，按顺序）**：① 能进首页 = v5 迁移通过（失败页阶段应是「迁移」）；
+  ② 设置 → 新建项目，说「看一场电影」→ 预览里把「怎么折算」选事件型 → 创建；
+  ③ 记一次：0.5 次应为 0 分、1 次应为满分，回执里要有「折算方式：事件型」那行；
+  ④ 老的自建项目记一次，分数应与 1.1.4 完全一致（linear 等价）；
+  ⑤ 杀进程重开，口径还在（`behavior_quant_spec` 落库）。
+
 ## 三、当前规模
 
 130 个 Dart 文件（lib）/ 约 25k 行；17 个测试文件 / 3.6k 行（含本轮 quant 2 文件）。
+v1.2.0：lib 164 个文件（含 quant 8 + custom_behavior_def + shape_picker）/ 测试 22 文件。
 第 8 步新增：domain 6 文件 2.75k 行 + 数据层 2 文件 491 行 + UI 5 文件 1.5k 行 + 测试 4 文件。
 数据层原 32 文件 / 4.4k 行；UI 原 17 文件 / 5.8k 行；Android 平台层 14 文件。
 
