@@ -49,7 +49,8 @@ void main() {
       stack: StackTrace.current,
     );
     final LogEntry e = appLog.snapshot().single;
-    expect(e.detail, contains('StateError'));
+    // StateError 的 toString 是「Bad state: …」，类名不会出现——别按类名断言。
+    expect(e.detail, contains('Bad state'));
     expect(e.detail, contains('炸了'));
     expect(e.detail, contains('app_log_test.dart'));
   });
