@@ -11,7 +11,6 @@ library;
 import 'package:exp_ledger/core/config/balance_config.dart';
 import 'package:exp_ledger/core/log/app_log.dart';
 import 'package:exp_ledger/core/theme/tokens.dart';
-import 'package:exp_ledger/data/data.dart';
 import 'package:exp_ledger/domain/anchor/anchor.dart';
 import 'package:exp_ledger/domain/enums.dart';
 import 'package:exp_ledger/domain/models/custom_behavior.dart';
