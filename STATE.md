@@ -32,6 +32,9 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   数据层测试含新用例通过）
 - 第 9 步 ✅ **运行日志（v1.1.1）**：环形缓冲 + 落盘 + 全局钩子 + 日志页 + 启动失败页入口
   设计见六之九；`test/core/app_log_test.dart` 9 个用例；版本 `1.1.1+5`
+  **APK 已产出**：`dist/exp-ledger-1.1.1.apk` 与 `/chat/outputs/` 同名副本，32 MB，
+  sha256 `ce6b08808803d0fc…`，CI run 43356112915 全绿（`test/data/` + `test/anchor/` +
+  `test/core/`）。manifest 已验：`INTERNET` 不在，`versionName 1.1.1` / `versionCode 5`
 - 第 8 步 ✅ **刻度标定层（Anchor Layer）全链路：domain + 数据层 + UI**
   设计说明见 `ANCHOR-PLUGIN.md`
   domain `lib/domain/anchor/` 6 文件 / 2.75k 行；数据层 `anchor_dao` + `anchor_repository` 491 行；
@@ -504,8 +507,7 @@ CI 一直只跑 `flutter test test/data/`，所以 `test/engine` 与 `test/captu
 > 现状：第 1–7 步完成并出过 APK（v1.0.2）；**第 8 步刻度标定层全链路已写完**
 > （domain + schema v3 四张新表 + DAO/Repository + 设置页入口 + 三个页面 + 四档小图），
 > 版本号已 bump 到 `1.1.0+4`，但**还没经过 `flutter analyze`，也还没出包**。
-> 下一件事：先跑 `flutter analyze` + `flutter test test/anchor/ test/data/`，
-> 绿了再 `bash tools/ship.sh <token>` 出 1.1.0 的 APK。
+> 已出包：v1.0.2 / v1.1.0（刻度标定层）/ v1.1.1（运行日志）。下一步是收到日志后按异常定位。
 > 三条红线：不加 INTERNET 权限；结算/算法层不许 import anchor（preflight 4d 会红）；
 > 既有 17 张表的 DDL 一条不改。
 > 其他可做：饮食采集入口（补 `intakeKcal`）、`PRAGMA foreign_keys = ON`
