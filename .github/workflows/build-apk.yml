@@ -73,8 +73,10 @@ jobs:
       - name: 分析（error / warning 必须为 0）
         run: flutter analyze --no-fatal-infos
 
-      - name: 数据层测试
-        run: flutter test test/data/ --reporter compact
+      - name: 全部测试
+        # 第 8 步起跑全量：domain 层零 Flutter 依赖，纯函数测试不需要模拟器；
+        # 只跑 test/data/ 会让 anchor 的纯函数与引导流程测试永远不执行。
+        run: flutter test --reporter compact
 
       - name: 打包
         run: |

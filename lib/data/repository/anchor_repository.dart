@@ -52,6 +52,10 @@ class AnchorRepository {
     return out;
   }
 
+  /// 只读刻度（还没声明量级时也有值）。
+  Future<UserAnchor?> anchorOf(String behaviorId) =>
+      _dao.anchorOf(_db, behaviorId);
+
   Future<AnchorCard?> card(String behaviorId) async {
     final UserAnchor? a = await _dao.anchorOf(_db, behaviorId);
     if (a == null) return null;

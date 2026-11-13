@@ -42,9 +42,12 @@ void main() {
       now: t0.add(const Duration(days: 1)),
     );
 
-    final AnchorCard? card = await repo.card('strength_training');
-    expect(card, isNotNull);
-    expect(card!.anchor.unitLabel, '一次训练');
+    // 只有刻度、还没声明量级时 card() 刻意返回 null（避免"标了一半"的卡片），
+    // 所以这里读 anchorOf。
+    final UserAnchor? saved = await repo.anchorOf('strength_training');
+    expect(saved, isNotNull);
+    expect(saved!.unitLabel, '一次训练');
+    expect(await repo.card('strength_training'), isNull);
   });
 
   test('刻度变更只追加 revision，不重算历史', () async {
@@ -58,10 +61,10 @@ void main() {
     );
     await repo.saveAnchor(second, now: t0.add(const Duration(days: 10)));
 
-    final AnchorCard? card = await repo.card('strength_training');
-    expect(card!.anchor.revisionHistory.length, 1);
-    expect(card.anchor.revisionHistory.first.field, 'unitLabel');
-    expect(card.anchor.revisionHistory.first.to, '一次训练');
+    final UserAnchor? saved = await repo.anchorOf('strength_training');
+    expect(saved!.revisionHistory.length, 1);
+    expect(saved.revisionHistory.first.field, 'unitLabel');
+    expect(saved.revisionHistory.first.to, '一次训练');
   });
 
   test('先验权重落库时不超过 0.5', () async {
@@ -158,7 +161,11 @@ void main() {
     );
     expect(ev.confidence, Confidence.formula);
     expect(ev.note, isNotEmpty);
-    expect((await repo.card('strength_training'))!.evidence!.id, ev.id);
+    // 没声明过量级时 recordEvidence 只落证据，不造先验——
+    // 所以这里查证据链，而不是卡片。
+    final List<AnchorEvidence> history =
+        await repo.evidenceHistory('strength_training');
+    expect(history.single.id, ev.id);
   });
 
   test('清空刻度层不影响别的表', () async {
