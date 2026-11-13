@@ -32,6 +32,10 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   数据层测试含新用例通过）
 - 第 10 步 ✅ **v1.1.2 UI 修正**：x 轴标签防重叠 / 预测按区间截断 / 区间信息行 /
   FAB 居中 / 通知图标 keep.xml + 通知初始化全降级。详见六之十。版本 `1.1.2+6`
+  **APK 已产出**：`dist/exp-ledger-1.1.2.apk` 与 `/chat/outputs/` 同名副本，32 MB，
+  sha256 `477e3fd770805b15…`，CI run 43359383485 全绿。
+  **图标修复有硬证据**：`resources.arsc` 里 `ic_notification` 在 1.1.2 存在、
+  在 1.1.1 **不存在**（同一检查脚本），说明 `res/raw/keep.xml` 真的把资源保住了
 - 第 9 步 ✅ **运行日志（v1.1.1）**：环形缓冲 + 落盘 + 全局钩子 + 日志页 + 启动失败页入口
   设计见六之九；`test/core/app_log_test.dart` 9 个用例；版本 `1.1.1+5`
   **APK 已产出**：`dist/exp-ledger-1.1.1.apk` 与 `/chat/outputs/` 同名副本，32 MB，
