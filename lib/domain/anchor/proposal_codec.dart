@@ -22,6 +22,7 @@ library;
 import 'dart:convert';
 
 import '../enums.dart';
+import '../models/project_axis.dart';
 import 'anchor_config.dart';
 import 'anchor_engine.dart';
 import 'anchor_models.dart';
@@ -525,4 +526,254 @@ class AnchorProposalCodec {
         note: 'AI 提议，已确认'
             '${proposal.citation.isEmpty ? '' : '（依据：${proposal.citation}）'}',
       );
+}
+
+// ---------------------------------------------------------------- 自建项目
+
+/// 一个「内置库里没有、但我想追踪」的项目，AI 的具体化提案。
+///
+/// 和 [AiProposal] 的区别：那个只给单位与档位（行为已经存在），
+/// 这个还要给**行为定义本身**（算哪个轴、正/负向、目标量多少）。
+class NewBehaviorProposal {
+  const NewBehaviorProposal({
+    required this.name,
+    required this.description,
+    required this.category,
+    required this.axis,
+    required this.measurementClass,
+    required this.unitLabel,
+    required this.definitionText,
+    required this.targetDose,
+    required this.doseUnit,
+    required this.referenceRangeId,
+    required this.rawTier,
+    required this.appliedTier,
+    required this.rationale,
+    required this.citation,
+    this.referenceObject = '',
+    this.notes = const <String>[],
+  });
+
+  final String name;
+  final String description;
+  final BehaviorCategory category;
+  final ProjectAxis axis;
+  final MeasurementClass measurementClass;
+  final String unitLabel;
+  final String definitionText;
+
+  /// 一次的目标量（doseFraction 的分母）。必须 > 0。
+  final double targetDose;
+  final String doseUnit;
+
+  final String referenceRangeId;
+  final ImpactTier rawTier;
+  final ImpactTier appliedTier;
+  final String rationale;
+  final String citation;
+  final String referenceObject;
+  final List<String> notes;
+
+  bool get downgraded => appliedTier != rawTier;
+}
+
+/// 新项目的提案结果：要么给出提案，要么给一句能照做的原因。
+typedef NewBehaviorResult = ({NewBehaviorProposal? proposal, String? error});
+
+/// 自建项目的编解码入口（独立类，不是 extension——
+/// extension 上的 static 成员调用起来别扭，而且这里用不到任何实例能力）。
+class NewBehaviorCodec {
+  const NewBehaviorCodec._();
+
+  /// 给网页 AI 的「新项目」请求文本。
+  ///
+  /// 与 [AnchorProposalCodec.buildRequestText] 共用同一套公式与档位纪律，
+  /// 多要三样东西：算哪个轴、正/负向、一次的目标量多少。
+  static String buildNewBehaviorRequestText({
+    required String name,
+    required String description,
+    required AnchorConfig config,
+    required double expPerPoint,
+    String axisHint = '',
+  }) {
+    final StringBuffer b = StringBuffer();
+    b.writeln('我想在经验账本里加一个内置库没有的项目：**$name**。');
+    if (description.trim().isNotEmpty) {
+      b.writeln('我的描述：${description.trim()}');
+    }
+    b.writeln();
+    b.writeln('帮我把它变成一个能每天打卡的条目。要给出四样东西：'
+        '①它算哪个能力轴 ②正向还是负向 ③"一次"怎么数、一次算多少 ④影响量级。');
+    b.writeln();
+    b.writeln('## 硬约束（违反会被自动打回）');
+    b.writeln('1. 档位只能 small / medium / mediumHigh 三选一，不给数字、不给小数。'
+        'large 我这边锁着（只能实测解锁），你不要提。');
+    b.writeln('2. 必须给 rationale（为什么这么定）与 citation（依据）。'
+        '没有 citation 会自动降一档。');
+    b.writeln('3. `definition_text` 必须能事后判断真假：含时长/次数/完成度之一。'
+        '禁止"适量""认真"这类无法核对的词。');
+    b.writeln('4. `target_dose` 是"一次算多少"的数值，必须 > 0，'
+        '并且和 `dose_unit` 配得上（例：target_dose=45, dose_unit="分钟"）。'
+        '不要给"视情况而定"。');
+    b.writeln('5. `axis` 只能取：strength（体能）/ cardio（心肺）/ memory（词汇）/ '
+        'writing（写作）/ discipline（自律）。拿不准就选最接近的那个，并在 rationale 说明。');
+    b.writeln('6. `category` 只能取：positive（做了加分）/ negative（做了扣分）/ '
+        'offPlan（计划外）。');
+    b.writeln();
+    b.writeln('## 我系统的量化规则（你定的档位与目标量会按这张规则走）');
+    b.writeln(_publicFormulaBlock(config, expPerPoint));
+    b.writeln();
+    if (axisHint.trim().isNotEmpty) {
+      b.writeln('## 我倾向的轴');
+      b.writeln(axisHint.trim());
+      b.writeln();
+    }
+    b.writeln('## 参照区间（可以引用，用来定档位）');
+    b.writeln(_publicRangeBlock());
+    b.writeln();
+    b.writeln('## 输出格式（只输出这个 JSON 对象，不要任何解释）');
+    b.writeln('''{
+  "name": "项目名（沿用我给的，或更准的短名）",
+  "description": "一句话说明它是什么",
+  "category": "positive | negative | offPlan",
+  "axis": "strength | cardio | memory | writing | discipline",
+  "measurement_class": "formula | subjective | semiObservable",
+  "unit_label": "一次＝什么（简短名词短语）",
+  "definition_text": "什么算一次、什么不算（可核对）",
+  "target_dose": 45,
+  "dose_unit": "分钟",
+  "reference_object": "跟我已知的某件事对照（可选，没有就空串）",
+  "reference_range_id": "custom 或上面列出的 id",
+  "tier": "small | medium | mediumHigh",
+  "rationale": "为什么这么定，两句话以内",
+  "citation": "依据来源"
+}''');
+    return b.toString();
+  }
+
+  static String _publicFormulaBlock(AnchorConfig config, double expPerPoint) {
+    String pct(double v) => '${(v * 100).round()}%';
+    final StringBuffer b = StringBuffer();
+    b.writeln('- 档位 → 先验权重（未实测前最多 ${pct(config.priorWeightCap)}）：'
+        'small ${pct(config.clampPrior(config.tierSmallPrior))} / '
+        'medium ${pct(config.clampPrior(config.tierMediumPrior))} / '
+        'mediumHigh ${pct(config.clampPrior(config.tierMediumHighPrior))}');
+    b.writeln('- 每次记录的计入比例 = 实际量 ÷ target_dose（超过 1.5 按 1.5 封顶），'
+        '再折算成当日有效分。');
+    b.writeln('- 最终 EXP = 当日有效分 × 该轴权重 × 状态乘数 × 置信权重'
+        '（自报 ${Confidence.selfReport.weight} / 推算 ${Confidence.formula.weight} / '
+        '实测 ${Confidence.calibrated.weight}）× '
+        '${expPerPoint.toStringAsFixed(2)} EXP/点。');
+    b.writeln('- 「subjective」类不折 EXP、不参与扣分；「semiObservable」只呈现时间占比。'
+        '拿不准就选 subjective，宁可不加分，也不要造分数。');
+    return b.toString();
+  }
+
+  static String _publicRangeBlock() {
+    final StringBuffer b = StringBuffer();
+    for (final ReferenceRange r in kReferenceRanges) {
+      b.writeln('- `$r.id` ${r.title}（${r.measurementClass.label}）'
+          '｜${r.bandSummary}｜出处：${r.sourceLabel}');
+    }
+    return b.toString();
+  }
+
+  /// 解析 AI 给的新项目提案。**逐条校验，坏的就给原因。**
+  static NewBehaviorResult decodeNewBehavior(
+    String raw, {
+    required AnchorConfig config,
+  }) {
+    final String? jsonText = AnchorProposalCodec.extractJson(raw);
+    if (jsonText == null) {
+      return (proposal: null, error: '回复里没有可解析的 JSON。让 AI 只输出那个对象。');
+    }
+    Object? decoded;
+    try {
+      decoded = jsonDecode(jsonText);
+    } on FormatException catch (e) {
+      return (proposal: null, error: 'JSON 语法错误：${e.message}');
+    }
+    if (decoded is! Map<Object?, Object?>) {
+      return (proposal: null, error: '最外层不是对象。');
+    }
+    final Map<String, Object?> m = decoded.cast<String, Object?>();
+
+    final String name = m['name']?.toString().trim() ?? '';
+    if (name.isEmpty) {
+      return (proposal: null, error: '缺 name：没有项目名没法建条目。');
+    }
+    final String unit = m['unit_label']?.toString().trim() ?? '';
+    if (unit.isEmpty) {
+      return (proposal: null, error: '缺 unit_label：没有单位就没法算"几次"。');
+    }
+    final String definition = m['definition_text']?.toString().trim() ?? '';
+    if (definition.isEmpty) {
+      return (proposal: null, error: '缺 definition_text：事后判断不了"算不算一次"的条目不能用。');
+    }
+    final String rationale = m['rationale']?.toString().trim() ?? '';
+    if (rationale.isEmpty) {
+      return (proposal: null, error: '缺 rationale：没有理由的定档没法审。');
+    }
+    final double? target = (m['target_dose'] as num?)?.toDouble();
+    if (target == null || target <= 0) {
+      return (proposal: null, error: 'target_dose 必须是大于 0 的数字（一次算多少）。');
+    }
+
+    final ImpactTier? parsedTier = ImpactTier.tryParse(m['tier']?.toString() ?? '');
+    if (parsedTier == null) {
+      return (
+        proposal: null,
+        error: 'tier「${m['tier']}」不在三档词表里。禁止自造数字档。',
+      );
+    }
+
+    final List<String> notes = <String>[];
+    ImpactTier applied = parsedTier;
+    if (applied.rank > config.aiTierCeiling.rank) {
+      applied = config.aiTierCeiling;
+      notes.add('AI 想给「${parsedTier.label}」，已压到「${applied.label}」：'
+          '「大」只能由实测解锁');
+    }
+    final String citation = m['citation']?.toString().trim() ?? '';
+    if (citation.isEmpty && config.noCitationDowngrade > 0) {
+      final ImpactTier before = applied;
+      final int idx = applied.rank - config.noCitationDowngrade;
+      applied = idx <= 0 ? ImpactTier.small : ImpactTier.values[idx];
+      notes.add('没有依据（citation 为空），「${before.label}」降到「${applied.label}」');
+    }
+
+    final String rangeId = m['reference_range_id']?.toString().trim() ?? 'custom';
+
+    return (
+      proposal: NewBehaviorProposal(
+        name: name,
+        description: m['description']?.toString().trim() ?? '',
+        category: _categoryOf(m['category']?.toString() ?? ''),
+        axis: ProjectAxis.parse(m['axis']?.toString() ?? 'discipline'),
+        measurementClass:
+            MeasurementClass.parse(m['measurement_class']?.toString() ?? ''),
+        unitLabel: unit,
+        definitionText: definition,
+        targetDose: target,
+        doseUnit: m['dose_unit']?.toString().trim() ?? '次',
+        referenceRangeId: referenceRangeById(rangeId) == null ? 'custom' : rangeId,
+        rawTier: parsedTier,
+        appliedTier: applied,
+        rationale: rationale,
+        citation: citation,
+        referenceObject: m['reference_object']?.toString().trim() ?? '',
+        notes: notes,
+      ),
+      error: null,
+    );
+  }
+
+  static BehaviorCategory _categoryOf(String raw) {
+    for (final BehaviorCategory c in BehaviorCategory.values) {
+      if (c.name == raw) return c;
+    }
+    if (raw == 'negative' || raw == '负向') return BehaviorCategory.negative;
+    if (raw == 'offPlan' || raw == '计划外') return BehaviorCategory.offPlan;
+    return BehaviorCategory.positive;
+  }
 }

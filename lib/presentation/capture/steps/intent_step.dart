@@ -3,11 +3,14 @@ import 'package:exp_ledger/core/theme/tokens.dart';
 import 'package:exp_ledger/domain/capture/capture_state.dart';
 import 'package:exp_ledger/domain/capture/capture_state_machine.dart';
 import 'package:exp_ledger/domain/capture/intent_matcher.dart';
+import 'package:exp_ledger/presentation/anchor/new_behavior_page.dart';
 import 'package:exp_ledger/presentation/capture/capture_controller.dart';
+import 'package:exp_ledger/presentation/providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// S1：只说人话。
-class IntentStep extends StatefulWidget {
+class IntentStep extends ConsumerStatefulWidget {
   const IntentStep({
     super.key,
     required this.controller,
@@ -18,10 +21,10 @@ class IntentStep extends StatefulWidget {
   final VoidCallback onVoice;
 
   @override
-  State<IntentStep> createState() => _IntentStepState();
+  ConsumerState<IntentStep> createState() => _IntentStepState();
 }
 
-class _IntentStepState extends State<IntentStep> {
+class _IntentStepState extends ConsumerState<IntentStep> {
   late final TextEditingController _text;
 
   @override
@@ -37,6 +40,23 @@ class _IntentStepState extends State<IntentStep> {
   void dispose() {
     _text.dispose();
     super.dispose();
+  }
+
+  /// 建完项目后：刷新 provider（AppShell 监听它并把新行为注册进库），
+  /// 再把同一段文字重新提交一次，用户就看到自己的项目出现在候选里。
+  Future<void> _createNewBehavior() async {
+    final String name = _text.text.trim();
+    final Object? created = await Navigator.of(context).push<Object?>(
+      MaterialPageRoute<Object?>(
+        builder: (_) => NewBehaviorPage(initialName: name),
+      ),
+    );
+    if (created == null || !mounted) return;
+    ref.invalidate(customBehaviorsProvider);
+    // 给 AppShell 一帧时间完成注册，再重新匹配。
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (!mounted) return;
+    widget.controller.dispatch(TextChanged(_text.text));
   }
 
   void _submit() {
@@ -86,7 +106,18 @@ class _IntentStepState extends State<IntentStep> {
             onSubmitted: (_) => _submit(),
           ),
         ),
-        const SizedBox(height: Tokens.gapM),
+        // 库里没有的项目，从这里就地建：把刚打的字带过去，省得重写。
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: _createNewBehavior,
+            child: const Text(
+              '库里没有？新建一个项目',
+              style: TextStyle(fontSize: Tokens.fontSmall, color: AppColors.calm),
+            ),
+          ),
+        ),
+        const SizedBox(height: Tokens.gapS),
         Row(
           children: [
             Expanded(

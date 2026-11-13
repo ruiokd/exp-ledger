@@ -37,6 +37,18 @@ class BehaviorLibrary {
   List<BehaviorDef> byCategory(BehaviorCategory c) =>
       all.where((b) => b.category == c).toList(growable: false);
 
+  /// 运行期注册（自建项目）。
+  ///
+  /// 故意**不重建对象**：CaptureMachine / IntentMatcher 持有的是同一个实例，
+  /// 原地加进 [all] 与索引后，它们立刻就能匹配到新行为。
+  void register(List<BehaviorDef> extra) {
+    for (final BehaviorDef b in extra) {
+      if (_byCode.containsKey(b.code)) continue;
+      all.add(b);
+      _byCode[b.code] = b;
+    }
+  }
+
   BehaviorDef? byCode(String code) => _byCode[code];
 
   BehaviorDef require(String code) {

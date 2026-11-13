@@ -61,6 +61,8 @@ def main() -> int:
         "app_setting", "dirty_day",
         # 第 8 步：刻度标定层（纯增量，不动上面任何一张）
         "user_anchor", "anchor_revision", "declared_impact", "anchor_evidence",
+        # 第 11 步：自建项目
+        "custom_behavior",
     }
     missing = expected_tables - tables
     if missing:
@@ -78,6 +80,7 @@ def main() -> int:
         "ux_daily_log_idem", "ux_valence_slot", "ux_negative_primary",
         "ix_history_key", "ix_memory_due", "ix_forecast_day",
         "ix_anchor_revision_time", "ix_anchor_evidence_behavior",
+        "ix_custom_behavior_enabled",
     ):
         if name not in indexes:
             print(f"  ✗ 缺索引：{name}")

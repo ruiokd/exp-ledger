@@ -30,6 +30,8 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   **APK 已产出**：`dist/exp-ledger-1.0.2.apk` / `/chat/outputs/` 同名副本，
   31.7 MB，sha256 `886f02af…5682a5`，CI run 43293073012 全绿（analyze 0 error/0 warning，
   数据层测试含新用例通过）
+- 第 11 步 ✅ **自建项目（v1.1.3）**：新表 + DAO/Repository + AI 提示词与解析 + 新建页 +
+  采集页/刻度页两个入口 + 关 R8（细节见六之十一、六之十二）。版本 `1.1.3+7`
 - 第 10 步 ✅ **v1.1.2 UI 修正**：x 轴标签防重叠 / 预测按区间截断 / 区间信息行 /
   FAB 居中 / 通知图标 keep.xml + 通知初始化全降级。详见六之十。版本 `1.1.2+6`
   **APK 已产出**：`dist/exp-ledger-1.1.2.apk` 与 `/chat/outputs/` 同名副本，32 MB，
@@ -447,6 +449,46 @@ test/core/app_log_test.dart    9 个用例（容量、筛选、截断、钩子�
   用户点"开启提醒"绝不能因为一个图标资源而崩。
 - **`res/raw/keep.xml` 不能删**：删了通知图标会再次被收缩掉。打包工具看不到 Dart 字符串里的资源引用，
   这是 Android 资源收缩的经典坑，不是 Flutter 特例。
+
+## 六之十一、自建项目（v1.1.3，改之前必看）
+
+内置库之外的行为（「上一堂课」这类），三处分工：
+
+```
+lib/domain/models/custom_behavior.dart   CustomBehaviorRecord + customBehaviorDef()
+lib/data/dao/custom_behavior_dao.dart    只搬行
+lib/data/repository/custom_behavior_repository.dart  create 一个事务写三处
+lib/presentation/anchor/new_behavior_page.dart       三步：说清 → AI 具体化 → 确认创建
+```
+
+- **量化不另起一套**：自定义行为的 `derive` 只产出 `doseFraction = 实际量 / 目标量`
+  （>1.5 封顶），之后照旧走 `baseScoreFor → score → EXP`。所以它的分数与内置行为
+  完全同一套系数，改 `BalanceConfig` 一起变。**别在这里自己算 EXP**。
+- **建一次写三处**（`custom_behavior` + `user_anchor` + `declared_impact`）必须同事务，
+  少写一处就得到"能记但刻度页看不到"或"库里有但记不了"的半成品。
+- **注册不是重建**：`BehaviorLibrary.register()` 原地加进 `all` 与索引，
+  `CaptureMachine` / `IntentMatcher` 持有同一实例，所以立刻生效。
+  新建后在采集页要能匹配到 → `AppShell` 在 build 里 `ref.listen(customBehaviorsProvider)`，
+  不管从哪个入口新建都会注册；`_openCapture` 前再 `_loadCustom()` 兜一次。
+- **AI 只给形状，不给分数**：`NewBehaviorCodec` 的三档封顶、缺 citation 降档、
+  自造数字打回、`target_dose > 0` 必填，与刻度层同一套纪律。确认后先验身份是
+  `userPrior`（拍板的是人）。
+- **`target_dose` 是分母**：预览页允许用户改这两个数（AI 常把"一次"定得过大或过小），
+  改完以用户为准。
+
+## 六之十二、release 关了 R8 / 资源压缩（v1.1.3）
+
+`android/app/build.gradle.kts` 的 release 里 `isMinifyEnabled = false` +
+`isShrinkResources = false`。两个真实事故都出在这里：
+
+| 版本 | 现象 | 根因 |
+|---|---|---|
+| v1.1.1 | `PlatformException(invalid_icon)` × 27 | `ic_notification` 只在 Dart 字符串里被引用，资源收缩器看不到 → 从 APK 删掉 |
+| v1.1.2 | `PlatformException(error, Missing type parameter)` | FLN 用 Gson 反序列化已保存排程，R8 擦掉泛型 `Signature` |
+
+自用分发不为几 MB 维护 keep 规则。**将来若要开回来**：加 `proguard-rules.pro`
+保留 `com.dexterous.**`、`com.google.gson.**` 与 `-keepattributes Signature,*Annotation*`，
+并保留 `res/raw/keep.xml`（它已经在仓库里）。
 
 ## 七之六、既有红测试：6 个（2026-11-13 首跑全量才暴露）
 

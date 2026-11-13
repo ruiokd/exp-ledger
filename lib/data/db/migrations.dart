@@ -13,7 +13,7 @@ class Migrations {
   const Migrations._();
 
   /// 当前 schema 版本。加迁移时 +1。
-  static const int version = 3;
+  static const int version = 4;
 
   /// 全新库：按 [kCreateStatements] 逐条建。
   static Future<void> createAll(Database db) async {
@@ -39,6 +39,12 @@ class Migrations {
     // 既有 17 张表一行未改 —— 这一层是纯增量。
     if (from < 3) {
       for (final String statement in kAnchorTables) {
+        await db.execute(statement);
+      }
+    }
+    // v3 → v4：自建项目表（内置行为库之外的那些）。
+    if (from < 4) {
+      for (final String statement in kCustomBehaviorTables) {
         await db.execute(statement);
       }
     }

@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:exp_ledger/core/config/balance_config.dart';
+import 'package:exp_ledger/core/log/app_log.dart';
 import 'package:exp_ledger/core/theme/tokens.dart';
 import 'package:exp_ledger/data/repository/capture_repository.dart';
 import 'package:exp_ledger/domain/behaviors/behavior_library.dart';
 import 'package:exp_ledger/domain/capture/capture_state_machine.dart';
 import 'package:exp_ledger/domain/capture/intent_matcher.dart';
 import 'package:exp_ledger/domain/enums.dart';
+import 'package:exp_ledger/domain/models/custom_behavior.dart';
 import 'package:exp_ledger/domain/models/draft_entry.dart';
 import 'package:exp_ledger/domain/models/user_profile.dart';
 import 'package:exp_ledger/presentation/capture/capture_controller.dart';
@@ -33,6 +35,28 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   late final BehaviorLibrary _library = BehaviorLibrary();
+
+  @override
+  void initState() {
+    super.initState();
+    // 自建项目要先进行为库，采集流程才认得出它。
+    // 放 post-frame：开库之后才读得到，且不阻塞首帧。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCustom());
+  }
+
+  Future<void> _loadCustom() async {
+    try {
+      final List<CustomBehaviorRecord> records =
+          await ref.read(customBehaviorRepositoryProvider).list();
+      if (!mounted) return;
+      _library.register(
+        records.map(customBehaviorDef).toList(growable: false),
+      );
+      setState(() {});
+    } catch (error) {
+      logWarn('custom', '自建项目加载失败（内置库照常用）', detail: '$error');
+    }
+  }
   late final IntentMatcher _matcher = IntentMatcher(_library);
   late final CaptureController _controller = CaptureController(
     machine: CaptureMachine(
@@ -140,6 +164,10 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   Future<void> _openCapture() async {
+    // 先刷新自建项目：刚建的项目必须能在这次采集里被认出来。
+    // register 按 code 去重，重复调用无副作用。
+    await _loadCustom();
+    if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => CapturePage(
@@ -167,6 +195,18 @@ class _AppShellState extends ConsumerState<AppShell> {
               pending: '${view.confirmations.length}',
             ),
       );
+    });
+
+    // 自建项目一变就注册进行为库。放在 build 里 listen 而不是流程里 await，
+    // 是为了让"在哪新建的"都算数（采集页 / 刻度页 / 以后别处）。
+    ref.listen<AsyncValue<List<CustomBehaviorRecord>>>(customBehaviorsProvider,
+        (AsyncValue<List<CustomBehaviorRecord>>? previous,
+            AsyncValue<List<CustomBehaviorRecord>> next) {
+      next.whenData((List<CustomBehaviorRecord> records) {
+        _library.register(
+          records.map(customBehaviorDef).toList(growable: false),
+        );
+      });
     });
 
     return Scaffold(

@@ -8,6 +8,7 @@ library;
 
 import 'package:exp_ledger/core/config/balance_config.dart';
 import 'package:exp_ledger/domain/anchor/anchor.dart';
+import 'package:exp_ledger/domain/models/custom_behavior.dart';
 import 'package:exp_ledger/core/util/date_key.dart';
 import 'package:exp_ledger/data/data.dart';
 import 'package:exp_ledger/domain/enums.dart';
@@ -369,4 +370,19 @@ final FutureProvider<List<AnchorCard>> anchorCardsProvider =
 final FutureProvider<Map<String, WeightResolution>> anchorResolutionsProvider =
     FutureProvider<Map<String, WeightResolution>>(
   (ref) => ref.watch(anchorRepositoryProvider).resolutions(),
+);
+
+// ---------------------------------------------------------------- 自建项目
+
+final Provider<CustomBehaviorRepository> customBehaviorRepositoryProvider =
+    Provider<CustomBehaviorRepository>(
+  (ref) => CustomBehaviorRepository(
+    database: ref.watch(appDatabaseProvider),
+    engine: ref.watch(anchorEngineProvider),
+  ),
+);
+
+final FutureProvider<List<CustomBehaviorRecord>> customBehaviorsProvider =
+    FutureProvider<List<CustomBehaviorRecord>>(
+  (ref) => ref.watch(customBehaviorRepositoryProvider).list(),
 );

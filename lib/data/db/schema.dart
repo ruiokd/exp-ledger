@@ -44,6 +44,9 @@ class Tables {
   static const String declaredImpact = 'declared_impact';
   static const String anchorEvidence = 'anchor_evidence';
 
+  /// 用户自建的项目（内置行为库之外的那些，「上一堂课」之类）。
+  static const String customBehavior = 'custom_behavior';
+
   // ---- 内部表 ----
   static const String dailyLogHistory = 'daily_log_history';
   static const String dirtyDay = 'dirty_day';
@@ -72,6 +75,7 @@ class Tables {
     anchorRevision,
     declaredImpact,
     anchorEvidence,
+    customBehavior,
   ];
 }
 
@@ -100,7 +104,38 @@ class Indexes {
   // 刻度标定层
   static const String anchorRevisionTime = 'ix_anchor_revision_time';
   static const String anchorEvidenceBehavior = 'ix_anchor_evidence_behavior';
+  static const String customBehaviorEnabled = 'ix_custom_behavior_enabled';
 }
+
+/// 自建项目的 DDL。
+///
+/// 为什么要 target_dose：EXP 由 `baseScoreFor(doseFraction)` 算，
+/// 而 doseFraction = 实际量 / 目标量。内置行为把目标量写死在代码里，
+/// 自建的只能存库——否则"上一堂课 45 分钟"这种没有分母。
+const List<String> kCustomBehaviorTables = <String>[
+  '''
+CREATE TABLE IF NOT EXISTS custom_behavior (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL,
+  axis TEXT NOT NULL,
+  measurement_class TEXT NOT NULL,
+  unit_label TEXT NOT NULL,
+  definition_text TEXT NOT NULL DEFAULT '',
+  target_dose REAL NOT NULL DEFAULT 1,
+  dose_unit TEXT NOT NULL DEFAULT '次',
+  tier TEXT NOT NULL DEFAULT 'medium',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)
+''',
+  '''
+CREATE INDEX IF NOT EXISTS ix_custom_behavior_enabled
+  ON custom_behavior (enabled, updated_at DESC)
+''',
+];
 
 /// 刻度标定层的 DDL（四张表 + 两个索引）。
 ///
@@ -547,4 +582,10 @@ const List<String> kCreateStatements = <String>[
   // ---------------------------------------------------------------- 刻度标定层
   // 第 8 步新增。只追加，不动上面任何一句 DDL。
   ...kAnchorTables,
+
+  // ---------------------------------------------------------------- 自建项目
+  // 第 11 步新增：内置库之外的行为。**只是"行为本身"**——
+  // 单位、档位仍住在 user_anchor / declared_impact（一个行为一套刻度），
+  // 这里存的是画卡片和生成提问要用的快照。
+  ...kCustomBehaviorTables,
 ];

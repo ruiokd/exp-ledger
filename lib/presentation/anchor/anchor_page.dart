@@ -7,9 +7,11 @@ library;
 import 'package:exp_ledger/core/theme/tokens.dart';
 import 'package:exp_ledger/data/data.dart';
 import 'package:exp_ledger/domain/anchor/anchor.dart';
+import 'package:exp_ledger/domain/models/custom_behavior.dart';
 import 'package:exp_ledger/presentation/anchor/anchor_catalog.dart';
 import 'package:exp_ledger/presentation/anchor/anchor_onboarding_page.dart';
 import 'package:exp_ledger/presentation/anchor/anchor_proposal_page.dart';
+import 'package:exp_ledger/presentation/anchor/new_behavior_page.dart';
 import 'package:exp_ledger/presentation/anchor/anchor_tier_bar.dart';
 import 'package:exp_ledger/presentation/providers.dart';
 import 'package:flutter/material.dart';
@@ -262,6 +264,30 @@ class AnchorPage extends ConsumerWidget {
               if (saved == true) ref.invalidate(anchorCardsProvider);
             },
             child: const Text('想不出单位？让 AI 帮我具体化'),
+          ),
+        ),
+        const SizedBox(height: Tokens.gapS),
+        SizedBox(
+          height: 46,
+          width: double.infinity,
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.ink,
+              side: const BorderSide(color: AppColors.divider),
+            ),
+            onPressed: () async {
+              final CustomBehaviorRecord? created = await Navigator.of(context)
+                  .push<CustomBehaviorRecord>(
+                MaterialPageRoute<CustomBehaviorRecord>(
+                  builder: (_) => const NewBehaviorPage(),
+                ),
+              );
+              if (created != null) {
+                ref.invalidate(anchorCardsProvider);
+                ref.invalidate(customBehaviorsProvider);
+              }
+            },
+            child: const Text('内置库里没有？新建一个项目'),
           ),
         ),
       ],

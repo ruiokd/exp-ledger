@@ -39,8 +39,8 @@ android {
         applicationId = "com.yg.ledger"
         minSdk = 23
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.1.2"
+        versionCode = 7
+        versionName = "1.1.3"
     }
 
     buildTypes {
@@ -50,6 +50,16 @@ android {
         release {
             // 自用分发：用上面固定的 keystore，保证可覆盖升级。
             signingConfig = signingConfigs.getByName("selfUse")
+            // 关掉 R8 与资源压缩。两个真实事故都出在这里：
+            //   1. v1.1.1 `invalid_icon`：ic_notification 只在 Dart 字符串里被引用，
+            //      资源收缩器看不到 → 从 APK 删掉 → getIdentifier 返回 0；
+            //   2. v1.1.2 `Missing type parameter`：flutter_local_notifications
+            //      用 Gson 反序列化已保存的排程，R8 擦掉泛型 Signature 后会抛这个。
+            // 自用包不需要为了省几 MB 去维护一整套 keep 规则：稳定优先。
+            // 将来若要开回来：加 proguard-rules.pro 保留 com.dexterous.**、
+            // com.google.gson.** 与 -keepattributes Signature。
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
