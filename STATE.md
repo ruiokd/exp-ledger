@@ -30,6 +30,8 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   **APK 已产出**：`dist/exp-ledger-1.0.2.apk` / `/chat/outputs/` 同名副本，
   31.7 MB，sha256 `886f02af…5682a5`，CI run 43293073012 全绿（analyze 0 error/0 warning，
   数据层测试含新用例通过）
+- 第 9 步 ✅ **运行日志（v1.1.1）**：环形缓冲 + 落盘 + 全局钩子 + 日志页 + 启动失败页入口
+  设计见六之九；`test/core/app_log_test.dart` 9 个用例；版本 `1.1.1+5`
 - 第 8 步 ✅ **刻度标定层（Anchor Layer）全链路：domain + 数据层 + UI**
   设计说明见 `ANCHOR-PLUGIN.md`
   domain `lib/domain/anchor/` 6 文件 / 2.75k 行；数据层 `anchor_dao` + `anchor_repository` 491 行；
@@ -395,6 +397,31 @@ lib/presentation/anchor/anchor_tier_bar.dart    四档横轴小图（空心点 v
   页面里 `(r.effectiveWeight * 100).round()` 是唯一允许的算术。
 - **`AnchorCatalog` 在 presentation**，不在 domain/anchor：通用插件不该认识 28 条行为库。
   分类规则：负向/计划外 → 半可观测；正向且有 questions → 可公式化；其余 → 仅主观可辨。
+
+## 六之九、运行日志（v1.1.1，改之前必看）
+
+```
+lib/core/log/app_log.dart      环形缓冲 800 条 + 级别 + 落盘钩子（纯 Dart，零 Flutter）
+lib/services/log_service.dart  落盘（support 目录 app.log，512KB 轮转）+ 全局错误钩子 + 导出报告
+lib/presentation/settings/log_page.dart  设置 → 运行日志（筛选 / 复制 / 分享 / 清空）
+test/core/app_log_test.dart    9 个用例（容量、筛选、截断、钩子异常、seed）
+```
+
+- **日志先于一切**：`main()` 里 `LogService.init()` 在 `runApp` 之前，但它内部全 try/catch，
+  拿不到目录就降级成内存日志。**写日志失败绝不许拦住启动**（v1.0.0 黑屏的教训：
+  `runApp` 前的 await 一抛就永久黑屏）。
+- **每条立即 `flushSync`**：崩溃前最后几行最值钱。为此 `_append` 用
+  `openSync(mode: append) → writeStringSync → flushSync → closeSync`，
+  失败一次就把 `_file` 置空，后面不再每条重试（避免卡顿）。
+- **不记内容**：只记"什么操作、什么结果、什么错误"。行为明细、答案、数值都不进日志——
+  日志是要被复制出去发给人的。加打点时守住这条。
+- **三个钩子**：`FlutterError.onError`（保留原处理）、`PlatformDispatcher.instance.onError`、
+  `runZonedGuarded`（Future 忘了 catch 的那类）。
+- **启动失败页有「复制运行日志」**：`StartupFailureApp` 里两个按钮——「复制诊断」（阶段+原文）
+  与「复制运行日志」（含上次运行的尾巴）。黑屏时这两样一起发最有定位价值。
+- **上次运行的日志会 seed 回内存**（tag=`last`，取末 120 行），所以重启后仍然看得到崩前的结尾。
+- 打点位置：`main`（启动/开库/补算/提醒/首帧）、`CaptureRepository.commit`（动作+行为码+是否重算）、
+  `AnchorRepository.declareImpact`（含被拒的 code）与 `recordEvidence`（种类+置信度）。
 
 ## 七之六、既有红测试：6 个（2026-11-13 首跑全量才暴露）
 

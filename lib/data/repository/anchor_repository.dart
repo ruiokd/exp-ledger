@@ -9,6 +9,7 @@
 /// 本层**不触发结算重算**：先验不进 `SettlementPipeline`（见 ANCHOR-PLUGIN.md）。
 library;
 
+import 'package:exp_ledger/core/log/app_log.dart';
 import 'package:exp_ledger/data/dao/anchor_dao.dart';
 import 'package:exp_ledger/data/db/app_database.dart';
 import 'package:exp_ledger/data/db/schema.dart';
@@ -136,6 +137,11 @@ class AnchorRepository {
       reason: reason,
     );
     if (!verdict.ok) {
+      logWarn(
+        'anchor',
+        '声明被拒 $behaviorId → ${tier.name}',
+        detail: 'code=${verdict.code}',
+      );
       return (impact: null, verdict: verdict);
     }
 
@@ -147,6 +153,12 @@ class AnchorRepository {
       note: reason,
     );
     await _dao.upsertImpact(_db, impact, now: at);
+    logInfo(
+      'anchor',
+      '声明量级 $behaviorId → ${tier.name}',
+      detail: 'source=${source.name} weight=${impact.weight} '
+          'from=${existing?.tier.name ?? 'none'} code=${verdict.code}',
+    );
     return (impact: impact, verdict: verdict);
   }
 
@@ -193,6 +205,12 @@ class AnchorRepository {
         );
       }
     });
+    logInfo(
+      'anchor',
+      '实测落账 $behaviorId → ${evidence.derivedTier.name}',
+      detail: 'kind=${evidence.kind.name} '
+          'conf=${evidence.confidence.name} value=${evidence.measuredValue}',
+    );
     return evidence;
   }
 

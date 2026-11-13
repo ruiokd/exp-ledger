@@ -11,6 +11,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:exp_ledger/core/log/app_log.dart';
 import 'package:exp_ledger/core/util/date_key.dart';
 import 'package:exp_ledger/data/dao/capture_session_dao.dart';
 import 'package:exp_ledger/data/dao/daily_log_dao.dart';
@@ -118,9 +119,23 @@ class CaptureRepository {
       },
     );
 
+    // 只记「什么操作、什么结果」——答案和数值不进日志（日志会被复制出去）。
+    logInfo(
+      'capture',
+      '${result.action.name} ${result.entry.behaviorCode}',
+      detail: 'day=${result.entry.dayKey.iso} '
+          'conf=${result.entry.confidence.name} '
+          'recompute=${result.needsRecompute}',
+    );
+
     if (result.needsRecompute) {
       // 重算必须在事务外——sqflite 不支持嵌套事务。
-      await _settlement?.recomputeFrom(result.dirtyFrom!);
+      try {
+        await _settlement?.recomputeFrom(result.dirtyFrom!);
+      } catch (error, stack) {
+        logError('settle', '写入后重算失败', error: error, stack: stack);
+        rethrow;
+      }
     }
     return result;
   }

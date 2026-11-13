@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'package:exp_ledger/core/theme/app_theme.dart';
 import 'package:exp_ledger/core/theme/tokens.dart';
+import 'package:exp_ledger/services/log_service.dart';
 import 'package:exp_ledger/data/db/app_database.dart';
 
 /// 启动结果。要么带着数据库，要么带着"为什么没有"。
@@ -170,6 +171,22 @@ class StartupErrorView extends StatelessWidget {
                 child: const Text('再试一次'),
               ),
             ],
+          ),
+          // 启动失败时日志最值钱：把上一次运行的尾巴和这次的异常一起带走。
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () async {
+                await Clipboard.setData(
+                  ClipboardData(text: LogService.buildReport()),
+                );
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('运行日志已复制（含上次运行的尾部）')),
+                );
+              },
+              child: const Text('复制运行日志'),
+            ),
           ),
         ],
       ),

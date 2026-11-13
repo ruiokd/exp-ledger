@@ -78,7 +78,7 @@ jobs:
         # 2026-11-13 首跑全量暴露了 6 个**既有**红测试（engine/capture），
         # 那是历史债、与本轮改动无关，单列一版修——见 STATE 七之六。
         # 不要为了绿去改那 6 个测试的期望值：先判代码与测试哪边对。
-        run: flutter test test/data/ test/anchor/ --reporter compact
+        run: flutter test test/data/ test/anchor/ test/core/ --reporter compact
 
       - name: 打包
         run: |

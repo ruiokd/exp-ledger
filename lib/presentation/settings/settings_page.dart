@@ -5,6 +5,7 @@ import 'package:exp_ledger/data/db/schema.dart';
 import 'package:exp_ledger/data/repository/setting_repository.dart';
 import 'package:exp_ledger/domain/enums.dart';
 import 'package:exp_ledger/presentation/anchor/anchor_page.dart';
+import 'package:exp_ledger/presentation/settings/log_page.dart';
 import 'package:exp_ledger/presentation/providers.dart';
 import 'package:exp_ledger/services/notification_service.dart';
 import 'package:flutter/material.dart';
@@ -52,6 +53,8 @@ class SettingsPage extends ConsumerWidget {
                 _ProfileCard(view: view),
                 const SizedBox(height: Tokens.gapM),
                 const _AnchorEntryCard(),
+                const SizedBox(height: Tokens.gapM),
+                const _LogEntryCard(),
                 const SizedBox(height: Tokens.gapM),
                 const _ReminderCard(),
                 const SizedBox(height: Tokens.gapM),
@@ -757,6 +760,55 @@ class _AnchorEntryCard extends StatelessWidget {
                     SizedBox(height: 2),
                     Text(
                       '给说不清怎么量的行为定单位与量级（先验，权重 ≤50%）',
+                      style: TextStyle(
+                        fontSize: Tokens.fontCaption,
+                        color: AppColors.inkFaint,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right,
+                  size: 20, color: AppColors.inkFaint),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 运行日志入口。放在刻度标定下面：它不是设置项，是"出问题时的出口"。
+class _LogEntryCard extends StatelessWidget {
+  const _LogEntryCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftCard(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(Tokens.radiusButton),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const LogPage()),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: <Widget>[
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      '运行日志',
+                      style: TextStyle(
+                        fontSize: Tokens.fontBody,
+                        color: AppColors.ink,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      '出异常时复制整段发过来（不含行为内容与数值）',
                       style: TextStyle(
                         fontSize: Tokens.fontCaption,
                         color: AppColors.inkFaint,
