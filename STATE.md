@@ -32,6 +32,10 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   数据层测试含新用例通过）
 - 第 11 步 ✅ **自建项目（v1.1.3）**：新表 + DAO/Repository + AI 提示词与解析 + 新建页 +
   采集页/刻度页两个入口 + 关 R8（细节见六之十一、六之十二）。版本 `1.1.3+7`
+  **APK 已产出**：`dist/exp-ledger-1.1.3.apk` 与 `/chat/outputs/` 同名副本，33 MB，
+  sha256 `133e47cf31a9555c…`，CI run 43364683929 全绿（analyze 0 error/0 warning，
+  `test/data/ + test/anchor/ + test/core/`）。包内已验：`ic_notification` 在 arsc、
+  `INTERNET` 不在、Gson 类名完整保留（关 R8 生效）、`versionName 1.1.3`
 - 第 10 步 ✅ **v1.1.2 UI 修正**：x 轴标签防重叠 / 预测按区间截断 / 区间信息行 /
   FAB 居中 / 通知图标 keep.xml + 通知初始化全降级。详见六之十。版本 `1.1.2+6`
   **APK 已产出**：`dist/exp-ledger-1.1.2.apk` 与 `/chat/outputs/` 同名副本，32 MB，
