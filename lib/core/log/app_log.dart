@@ -48,6 +48,7 @@ class LogEntry {
     required this.tag,
     required this.message,
     this.detail = '',
+    this.previousRun = false,
   });
 
   final DateTime at;
@@ -60,6 +61,12 @@ class LogEntry {
 
   /// 异常原文、堆栈、附加键值。已截断，不会无限长。
   final String detail;
+
+  /// 上一次运行留下的（启动时从文件尾部读回来的）。
+  ///
+  /// 默认**不**参与列表与导出：不然每次导出的前半截都是上次的碎片，
+  /// 时间戳还全被压成"现在"，读起来像刚发生的事。
+  final bool previousRun;
 
   String get time =>
       '${_two(at.hour)}:${_two(at.minute)}:${_two(at.second)}.${_three(at.millisecond)}';
@@ -124,10 +131,15 @@ class AppLog {
     }
   }
 
-  List<LogEntry> snapshot({LogLevel? minLevel, int? limit}) {
+  List<LogEntry> snapshot({
+    LogLevel? minLevel,
+    int? limit,
+    bool includePreviousRun = false,
+  }) {
     final List<LogEntry> all = _buffer
         .where((LogEntry e) =>
-            minLevel == null || e.level.index >= minLevel.index)
+            (includePreviousRun || !e.previousRun) &&
+            (minLevel == null || e.level.index >= minLevel.index))
         .toList(growable: false);
     if (limit == null || all.length <= limit) return all;
     return all.sublist(all.length - limit);
@@ -135,17 +147,30 @@ class AppLog {
 
   int get length => _buffer.length;
 
-  int get errorCount =>
-      _buffer.where((LogEntry e) => e.level == LogLevel.error).length;
+  /// 只数**本次运行**的错误：重启后的"上次那 9 条"不该永远挂在这里。
+  int get errorCount => _buffer
+      .where((LogEntry e) => !e.previousRun && e.level == LogLevel.error)
+      .length;
+
+  /// 上次运行留下来的行数。
+  int get previousRunCount =>
+      _buffer.where((LogEntry e) => e.previousRun).length;
 
   /// 纯文本导出（复制给别人的就是这段）。
-  String dump({LogLevel? minLevel, String header = ''}) {
+  String dump({
+    LogLevel? minLevel,
+    String header = '',
+    bool includePreviousRun = false,
+  }) {
     final StringBuffer b = StringBuffer();
     if (header.isNotEmpty) {
       b.writeln(header);
       b.writeln('---');
     }
-    for (final LogEntry e in snapshot(minLevel: minLevel)) {
+    for (final LogEntry e in snapshot(
+      minLevel: minLevel,
+      includePreviousRun: includePreviousRun,
+    )) {
       b.writeln(e.line);
     }
     return b.toString();
@@ -165,6 +190,7 @@ class AppLog {
         level: line.contains(' E [') ? LogLevel.error : LogLevel.info,
         tag: 'last',
         message: line,
+        previousRun: true,
       ));
     }
     if (_buffer.length > capacity) {

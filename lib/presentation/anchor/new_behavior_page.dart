@@ -429,7 +429,8 @@ class _NewBehaviorPageState extends ConsumerState<NewBehaviorPage> {
           '量法：${_cls.label}',
     );
     Clipboard.setData(ClipboardData(text: text));
-    logInfo('custom', '生成新项目提示词 $name');
+    // 只记动作，不记项目名：日志会被复制出去，用户输入的自由文本不进日志。
+    logInfo('custom', '生成新项目提示词', detail: 'nameLen=${name.length}');
     _toast('提示词已复制，去网页版 AI 粘贴');
   }
 

@@ -148,11 +148,26 @@ class LogService {
     head.writeln('导出时间：${DateTime.now().toIso8601String()}');
     head.writeln('平台：${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
     head.writeln('Dart：${Platform.version}');
-    head.writeln('日志条数：${appLog.length}（其中错误 ${appLog.errorCount} 条）');
+    head.writeln('本次运行：${appLog.length - appLog.previousRunCount} 条'
+        '（其中错误 ${appLog.errorCount} 条）');
+    head.writeln('上次运行尾部：${appLog.previousRunCount} 行（只作对照，不计入错误数）');
     head.writeln('落盘：${_ready ? '正常' : '未就绪（仅内存）'}');
     head.writeln('说明：日志不含行为内容与数值，只有「什么操作、什么结果」。');
     head.writeln('---');
     head.write(appLog.dump());
+    // 上次运行的尾部单独成节：崩溃前最后几行最有价值，但不该混进本次的时间线。
+    final List<LogEntry> previous = appLog
+        .snapshot(includePreviousRun: true)
+        .where((LogEntry e) => e.previousRun)
+        .toList(growable: false);
+    if (previous.isNotEmpty) {
+      head.writeln();
+      head.writeln('--- 上次运行的最后 ${previous.length > 25 ? 25 : previous.length} 行 ---');
+      final int start = previous.length > 25 ? previous.length - 25 : 0;
+      for (final LogEntry e in previous.sublist(start)) {
+        head.writeln(e.message);
+      }
+    }
     return head.toString();
   }
 }

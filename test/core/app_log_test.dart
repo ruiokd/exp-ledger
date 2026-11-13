@@ -71,6 +71,32 @@ void main() {
     expect(all.first.message, '旧日志一');
   });
 
+  test('上次运行的日志默认不混进本次（时间线不能被压平）', () {
+    appLog.seedFromLines(<String>[
+      '2026-11-13 11:12:54.059 E [platform] 未捕获的异步异常 | 旧错误',
+      '2026-11-13 11:12:54.777 I [boot] 旧信息',
+    ]);
+    logInfo('boot', '本次启动');
+
+    // 默认视图只有本次那条。
+    expect(appLog.snapshot().length, 1);
+    expect(appLog.snapshot().single.message, '本次启动');
+    expect(appLog.previousRunCount, 2);
+    // 旧日志里的 error 不该永远挂在"本次错误数"上。
+    expect(appLog.errorCount, 0);
+    // 需要对照时可以显式取。
+    expect(appLog.snapshot(includePreviousRun: true).length, 3);
+  });
+
+  test('dump 默认只导本次，显式要求才带上次', () {
+    appLog.seedFromLines(<String>['旧行']);
+    logInfo('boot', '本次行');
+    final String only = appLog.dump();
+    expect(only, contains('本次行'));
+    expect(only, isNot(contains('旧行')));
+    expect(appLog.dump(includePreviousRun: true), contains('旧行'));
+  });
+
   test('落盘钩子抛异常不影响调用方', () {
     appLog.attachSink((LogEntry e) => throw StateError('盘满了'));
     expect(() => logInfo('t', '依然写得进去'), returnsNormally);

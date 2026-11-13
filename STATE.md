@@ -30,6 +30,8 @@ Flutter + Dart 本地 Android App：用可查证的科学公式，把行为带�
   **APK 已产出**：`dist/exp-ledger-1.0.2.apk` / `/chat/outputs/` 同名副本，
   31.7 MB，sha256 `886f02af…5682a5`，CI run 43293073012 全绿（analyze 0 error/0 warning，
   数据层测试含新用例通过）
+- 第 12 步 ✅ **日志纪律（v1.1.4）**：不记用户自由文本；上次运行单独分节，
+  `errorCount` 只数本次；日志页加「含上次运行」开关。详见六之十三。版本 `1.1.4+8`
 - 第 11 步 ✅ **自建项目（v1.1.3）**：新表 + DAO/Repository + AI 提示词与解析 + 新建页 +
   采集页/刻度页两个入口 + 关 R8（细节见六之十一、六之十二）。版本 `1.1.3+7`
   **APK 已产出**：`dist/exp-ledger-1.1.3.apk` 与 `/chat/outputs/` 同名副本，33 MB，
@@ -494,6 +496,22 @@ lib/presentation/anchor/new_behavior_page.dart       三步：说清 → AI 具�
 保留 `com.dexterous.**`、`com.google.gson.**` 与 `-keepattributes Signature,*Annotation*`，
 并保留 `res/raw/keep.xml`（它已经在仓库里）。
 
+## 六之十三、日志纪律：不记内容 + 上次运行单独分节（v1.1.4）
+
+两条规则，都是踩出来的：
+
+1. **日志里不许出现用户输入的自由文本。**
+   起因：`logInfo('custom', '生成新项目提示词 射了')` 把项目名写进了日志，
+   而日志是要被复制出去发人的。现在只记动作与结构字段
+   （`nameLen`、`code`、`axis`、`tier`），内置行为的 `code` 可以记
+   （它是固定公开字符串），**自建项目的名字不记**。
+   加打点时自查三件事：会不会带出行为内容？会不会带出数值？会不会带出用户自由文本？
+2. **上次运行的日志默认不混进本次。**
+   `LogEntry.previousRun = true`，`snapshot()` / `dump()` 默认排除，
+   `errorCount` 只数本次。导出报告里单独一节「上次运行的最后 25 行」。
+   起因：日志导出的前半截全是上次的碎片，时间戳被压成"现在"，
+   128 条里 119 条是 `[last]`，真正有用的本次时间线被埋了。
+
 ## 七之六、既有红测试：6 个（2026-11-13 首跑全量才暴露）
 
 CI 一直只跑 `flutter test test/data/`，所以 `test/engine` 与 `test/capture` 里的这些
@@ -569,17 +587,27 @@ CI 一直只跑 `flutter test test/data/`，所以 `test/engine` 与 `test/captu
 
 ## 八、续接提示词（新会话直接粘这段）
 
-> 继续做经验账本项目。先读 `/workspace/exp_ledger/STATE.md`，
-> 里面是完整的进度、架构铁律、数据层结构、刻度标定层结构与实现约定；
-> 刻度层的设计细节读 `/workspace/exp_ledger/ANCHOR-PLUGIN.md`。
-> 现状：第 1–7 步完成并出过 APK（v1.0.2）；**第 8 步刻度标定层全链路已写完**
-> （domain + schema v3 四张新表 + DAO/Repository + 设置页入口 + 三个页面 + 四档小图），
-> 版本号已 bump 到 `1.1.0+4`，但**还没经过 `flutter analyze`，也还没出包**。
-> 已出包：v1.0.2 / v1.1.0（刻度标定层）/ v1.1.1（运行日志）。下一步是收到日志后按异常定位。
-> 三条红线：不加 INTERNET 权限；结算/算法层不许 import anchor（preflight 4d 会红）；
-> 既有 17 张表的 DDL 一条不改。
-> 其他可做：饮食采集入口（补 `intakeKcal`）、`PRAGMA foreign_keys = ON`
-> （需先审删除顺序）、把 `tools/parse_dart.py` 的坑写进 skill。
+> 继续做经验账本项目。先读 `/workspace/exp_ledger/STATE.md`（进度、铁律、数据层/刻度层/
+> 自建项目/日志四节的结构与坑），细节读 `ANCHOR-PLUGIN.md`。
+>
+> 现状：v1.1.4 已出包并装机验证过。第 1–12 步全部完成：
+> 刻度标定层（先验 ≤0.5、大档锁定、实测覆盖、网页 AI 离线提案）、
+> 自建项目（内置库没有的行为就地新建，AI 给形状、公式算分）、
+> 运行日志（环形缓冲 + 落盘 + 全局钩子 + 不记内容 + 上次运行分节）。
+> 最新产物 `dist/exp-ledger-1.1.4.apk`（sha256 见上），CI 跑
+> `test/data/ test/anchor/ test/core/` 三组。
+>
+> 已知欠账（按建议顺序）：
+> ① 既有 6 个红测试（STATE 七之六有期望/实际/初判三栏）——先判"代码对还是测试期望对"，
+>    不许为了让 CI 变绿去改期望值；
+> ② 自建项目还不能编辑/删除（Repository 有 `remove()`，UI 没接）；
+> ③ 饮食采集入口没做，`EnergyLedger.intakeKcal` 恒为 0；
+> ④ `PRAGMA foreign_keys = ON` 没开（要先审删除顺序，配 DeletingOrder 测试）；
+> ⑤ 刻度图（AnchorTierBar）只在刻度页用，明细页还没显示"这条是先验"。
+>
+> 三条红线：不加 INTERNET 权限（AI 全走剪贴板旁路）；
+> 结算/算法层不许 import anchor（preflight 4d 会红）；既有 17 张表的 DDL 一条不改。
+> release 现在关了 R8/资源压缩（六之十二），不要再打开，除非补 proguard 规则。
 
 ## 九、交付给用户时的语气约定
 

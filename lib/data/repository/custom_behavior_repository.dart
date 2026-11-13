@@ -121,7 +121,7 @@ class CustomBehaviorRepository {
 
     logInfo(
       'custom',
-      '新建项目 ${record.name}',
+      '新建项目',
       detail: 'code=$code axis=${axis.name} cat=${category.name} '
           'class=${measurementClass.name} tier=${tier.name} '
           'target=${record.targetDose}${record.doseUnit}',

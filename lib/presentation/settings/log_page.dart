@@ -29,9 +29,12 @@ class LogPage extends StatefulWidget {
 
 class _LogPageState extends State<LogPage> {
   LogLevel? _min = LogLevel.info;
+  bool _withPrevious = false;
 
-  List<LogEntry> get _entries =>
-      AppLog.instance.snapshot(minLevel: _min).reversed.toList(growable: false);
+  List<LogEntry> get _entries => AppLog.instance
+      .snapshot(minLevel: _min, includePreviousRun: _withPrevious)
+      .reversed
+      .toList(growable: false);
 
   void _toast(String text) {
     if (!mounted) return;
@@ -125,7 +128,8 @@ class _LogPageState extends State<LogPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              '共 ${AppLog.instance.length} 条 · 错误 ${AppLog.instance.errorCount} 条 · '
+              '本次 ${AppLog.instance.length - AppLog.instance.previousRunCount} 条 · '
+              '错误 ${AppLog.instance.errorCount} 条 · '
               '${LogService.isReady ? '已落盘' : '仅内存（落盘不可用）'}',
               style: const TextStyle(
                 fontSize: Tokens.fontSmall,
@@ -171,6 +175,20 @@ class _LogPageState extends State<LogPage> {
           chip('信息以上', LogLevel.info),
           chip('警告以上', LogLevel.warn),
           chip('仅错误', LogLevel.error),
+          if (AppLog.instance.previousRunCount > 0)
+            FilterChip(
+              label: Text(
+                '含上次运行 ${AppLog.instance.previousRunCount} 行',
+                style: const TextStyle(fontSize: Tokens.fontCaption),
+              ),
+              selected: _withPrevious,
+              selectedColor: AppColors.calmSoft,
+              backgroundColor: AppColors.surface,
+              side: BorderSide(
+                color: _withPrevious ? AppColors.calm : AppColors.divider,
+              ),
+              onSelected: (_) => setState(() => _withPrevious = !_withPrevious),
+            ),
         ],
       ),
     );
