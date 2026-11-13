@@ -36,14 +36,6 @@ class AppShell extends ConsumerStatefulWidget {
 class _AppShellState extends ConsumerState<AppShell> {
   late final BehaviorLibrary _library = BehaviorLibrary();
 
-  @override
-  void initState() {
-    super.initState();
-    // 自建项目要先进行为库，采集流程才认得出它。
-    // 放 post-frame：开库之后才读得到，且不阻塞首帧。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCustom());
-  }
-
   Future<void> _loadCustom() async {
     try {
       final List<CustomBehaviorRecord> records =
@@ -91,6 +83,9 @@ class _AppShellState extends ConsumerState<AppShell> {
   void initState() {
     super.initState();
     unawaited(_loadProfile());
+    // 自建项目要先进行为库，采集流程才认得出它。
+    // 放 post-frame：开库之后才读得到，且不阻塞首帧。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCustom());
   }
 
   @override
